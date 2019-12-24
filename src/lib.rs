@@ -22,16 +22,19 @@
 #include "pointers.h"
 #include "integers.h"
 */
+#![deny(clippy::all, clippy::pedantic)]
+#![allow(clippy::many_single_char_names, clippy::use_self)]
 use num::{One, Zero};
 
 //
 //  Chapter 1. Foundations
 //
-
+#[must_use]
 pub fn plus_0(a: i32, b: i32) -> i32 {
     a + b
 }
 
+#[must_use]
 pub fn plus_1(a: /*&*/ i32, b: /*&*/ i32) -> i32 {
     a + b
 }
@@ -40,20 +43,21 @@ pub fn plus_2(a: i32, b: i32, c: &mut i32) {
     *c = a + b;
 }
 
+#[must_use]
 pub fn square(n: i32) -> i32 {
     n * n
 }
 
 pub trait BinaryOperation {
     type Domain;
-    fn call_once(self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
 }
 
-pub fn square_with_op<Op>(x: &Op::Domain, op: Op) -> Op::Domain
+pub fn square_with_op<Op>(x: &Op::Domain, op: &Op) -> Op::Domain
 where
     Op: BinaryOperation,
 {
-    op.call_once(x, x)
+    op.call(x, x)
 }
 
 // Function object for equality
@@ -74,7 +78,7 @@ impl<T> Equal<T>
 where
     T: Regular,
 {
-    fn call_once(self, x: &T, y: &T) -> bool {
+    fn _call(x: &T, y: &T) -> bool {
         x == y
     }
 }
@@ -93,7 +97,7 @@ pub trait TotallyOrdered: Ord {}
 impl<T> TotallyOrdered for T where T: Ord {}
 
 #[derive(Clone, Default, Eq, Ord, PartialEq, PartialOrd)]
-struct Pair<T0, T1>
+pub struct Pair<T0, T1>
 where
     T0: Regular,
     T1: Regular,
@@ -107,8 +111,8 @@ where
     T0: Regular,
     T1: Regular,
 {
-    fn new(m0: T0, m1: T1) -> Self {
-        Pair { m0, m1 }
+    fn _new(m0: T0, m1: T1) -> Self {
+        Self { m0, m1 }
     }
 }
 
@@ -126,7 +130,7 @@ where
 // model Regular(triple)
 
 #[derive(Clone, Default, Eq, Ord, PartialEq, PartialOrd)]
-struct Triple<T0, T1, T2>
+pub struct Triple<T0, T1, T2>
 where
     T0: Regular,
     T1: Regular,
@@ -168,21 +172,23 @@ where
 //    if (x < 0) return -x; else return x;
 //} // unary operation
 
+#[must_use]
 pub fn euclidean_norm(x: f64, y: f64) -> f64 {
     (x * x + y * y).sqrt()
 } // binary operation
 
+#[must_use]
 pub fn euclidean_norm_3(x: f64, y: f64, z: f64) -> f64 {
     (x * x + y * y + z * z).sqrt()
 } // ternary operation
 
-pub trait Integer: Eq + One + std::ops::Sub<Self, Output = Self> + Zero {}
+pub trait Integer: One + Ord + Regular + std::ops::Sub<Self, Output = Self> + Zero {}
 
-pub trait Transformation<Domain>: FnMut(Domain) -> Domain {
+pub trait Transformation<Domain>: Fn(Domain) -> Domain {
     type DistanceType: Integer;
 }
 
-pub fn power_unary<Domain, F, N>(mut x: Domain, mut n: N, mut f: F) -> Domain
+pub fn power_unary<Domain, F, N>(mut x: Domain, mut n: N, f: &F) -> Domain
 where
     F: Transformation<Domain>,
     N: Integer,
@@ -196,24 +202,24 @@ where
     x
 }
 
-pub fn distance<Domain, F>(mut x: Domain, y: Domain, mut f: F) -> F::DistanceType
+pub fn distance<Domain, F>(mut x: Domain, y: &Domain, f: &F) -> F::DistanceType
 where
     F: Transformation<Domain>,
     Domain: Regular,
 {
     // Precondition: $y$ is reachable from $x$ under $f$
     let mut n = F::DistanceType::zero();
-    while x != y {
+    while &x != y {
         x = f(x);
         n = n + F::DistanceType::one();
     }
     n
 }
 
-pub trait UnaryPredicate<Domain>: FnMut(&Domain) -> bool {}
-impl<Domain, T> UnaryPredicate<Domain> for T where T: FnMut(&Domain) -> bool {}
+pub trait UnaryPredicate<Domain>: Fn(&Domain) -> bool {}
+impl<Domain, T> UnaryPredicate<Domain> for T where T: Fn(&Domain) -> bool {}
 
-pub fn collision_point<Domain, F, P>(x: Domain, mut f: F, mut p: P) -> Domain
+pub fn collision_point<Domain, F, P>(x: Domain, f: &F, p: &P) -> Domain
 where
     Domain: Regular,
     F: Transformation<Domain>,
@@ -243,17 +249,17 @@ where
          // Postcondition: return value is terminal point or collision point
 }
 
-pub fn terminating<Domain, F, P>(x: Domain, f: F, p: P) -> bool
+pub fn terminating<Domain, F, P>(x: Domain, f: &F, p: &P) -> bool
 where
     Domain: Regular,
     F: Transformation<Domain>,
-    P: Regular + UnaryPredicate<Domain>,
+    P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    !p.clone()(&collision_point(x, f, p))
+    !p(&collision_point(x, f, p))
 }
 
-pub fn collision_point_nonterminating_orbit<Domain, F>(x: Domain, mut f: F) -> Domain
+pub fn collision_point_nonterminating_orbit<Domain, F>(x: Domain, f: &F) -> Domain
 where
     Domain: Regular,
     F: Transformation<Domain>,
@@ -272,26 +278,26 @@ where
          // Postcondition: return value is collision point
 }
 
-pub fn circular_nonterminating_orbit<Domain, F>(x: Domain, f: F) -> bool
+pub fn circular_nonterminating_orbit<Domain, F>(x: &Domain, f: &F) -> bool
 where
     Domain: Regular,
-    F: Regular + Transformation<Domain>,
+    F: Transformation<Domain>,
 {
-    x == f.clone()(collision_point_nonterminating_orbit(x.clone(), f))
+    x == &f(collision_point_nonterminating_orbit(x.clone(), f))
 }
 
-pub fn circular<Domain, F, P>(x: Domain, mut f: F, mut p: P) -> bool
+pub fn circular<Domain, F, P>(x: &Domain, f: F, p: P) -> bool
 where
     Domain: Regular,
-    F: Regular + Transformation<Domain>,
-    P: Regular + UnaryPredicate<Domain>,
+    F: Transformation<Domain>,
+    P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    let y = collision_point(x.clone(), f.clone(), p.clone());
-    p(&y) && x == f(y)
+    let y = collision_point(x.clone(), &f, &p);
+    p(&y) && x == &f(y)
 }
 
-pub fn convergent_point<Domain, F>(mut x0: Domain, mut x1: Domain, mut f: F) -> Domain
+pub fn convergent_point<Domain, F>(mut x0: Domain, mut x1: Domain, f: &F) -> Domain
 where
     Domain: Regular,
     F: Transformation<Domain>,
@@ -304,76 +310,86 @@ where
     x0
 }
 
-pub fn connection_point_nonterminating_orbit<Domain, F>(x: Domain, f: F) -> Domain
+pub fn connection_point_nonterminating_orbit<Domain, F>(x: Domain, f: &F) -> Domain
 where
     Domain: Regular,
-    F: Regular + Transformation<Domain>,
+    F: Transformation<Domain>,
 {
-    convergent_point(
-        x.clone(),
-        f.clone()(collision_point_nonterminating_orbit(x, f.clone())),
-        f,
-    )
+    convergent_point(x.clone(), f(collision_point_nonterminating_orbit(x, f)), f)
 }
 
-/*
-template<typename F, typename P>
-    requires(Transformation(F) && UnaryPredicate(P) &&
-        Domain(F) == Domain(P))
-Domain(F) connection_point(const Domain(F)& x, F f, P p)
+pub fn connection_point<Domain, F, P>(x: Domain, f: &F, p: P) -> Domain
+where
+    Domain: Regular,
+    F: Transformation<Domain>,
+    P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    Domain(F) y = collision_point(x, f, p);
-    if (!p(y)) return y;
-    return convergent_point(x, f(y), f);
+    let y = collision_point(x.clone(), f, &p);
+    if !p(&y) {
+        return y;
+    }
+    convergent_point(x, f(y), f)
 }
 
 // Exercise 2.3:
 
-template<typename F>
-    requires(Transformation(F))
-Domain(F) convergent_point_guarded(Domain(F) x0,
-                                   Domain(F) x1,
-                                   Domain(F) y, F f)
+pub fn convergent_point_guarded<Domain, F>(
+    mut x0: Domain,
+    mut x1: Domain,
+    y: &Domain,
+    f: F,
+) -> Domain
+where
+    Domain: Regular,
+    F: Transformation<Domain>,
 {
     // Precondition: $\func{reachable}(x0, y, f) \wedge \func{reachable}(x1, y, f)$
-    typedef DistanceType(F) N;
-    N d0 = distance(x0, y, f);
-    N d1 = distance(x1, y, f);
-    if      (d0 < d1) x1 = power_unary(x1, d1 - d0, f);
-    else if (d1 < d0) x0 = power_unary(x0, d0 - d1, f);
-    return convergent_point(x0, x1, f);
+    let d0 = distance(x0.clone(), &y, &f);
+    let d1 = distance(x1.clone(), &y, &f);
+    match d0.cmp(&d1) {
+        std::cmp::Ordering::Less => x1 = power_unary(x1, d1 - d0, &f),
+        std::cmp::Ordering::Greater => x0 = power_unary(x0, d0 - d1, &f),
+        _ => (),
+    }
+    convergent_point(x0, x1, &f)
 }
 
-template<typename F>
-    requires(Transformation(F))
-triple<DistanceType(F), DistanceType(F), Domain(F)>
-orbit_structure_nonterminating_orbit(const Domain(F)& x, F f)
+pub fn orbit_structure_nonterminating_orbit<Domain, F>(
+    x: Domain,
+    f: F,
+) -> Triple<F::DistanceType, F::DistanceType, Domain>
+where
+    Domain: Regular,
+    F: Transformation<Domain>,
 {
-    typedef DistanceType(F) N;
-    Domain(F) y = connection_point_nonterminating_orbit(x, f);
-    return triple<N, N, Domain(F)>(distance(x, y, f),
-                                   distance(f(y), y, f),
-                                   y);
+    let y = connection_point_nonterminating_orbit(x.clone(), &f);
+    Triple::new(distance(x, &y, &f), distance(f(y.clone()), &y, &f), y)
 }
 
-template<typename F, typename P>
-    requires(Transformation(F) &&
-        UnaryPredicate(P) && Domain(F) == Domain(P))
-triple<DistanceType(F), DistanceType(F), Domain(F)>
-orbit_structure(const Domain(F)& x, F f, P p)
+pub fn orbit_structure<Domain, F, P>(
+    x: Domain,
+    f: F,
+    p: P,
+) -> Triple<F::DistanceType, F::DistanceType, Domain>
+where
+    Domain: Regular,
+    F: Transformation<Domain>,
+    P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    typedef DistanceType(F) N;
-    Domain(F) y = connection_point(x, f, p);
-    N m = distance(x, y, f);
-    N n(0);
-    if (p(y)) n = distance(f(y), y, f);
+    let y = connection_point(x.clone(), &f, &p);
+    let m = distance(x, &y, &f);
+    let mut n = F::DistanceType::zero();
+    if p(&y) {
+        n = distance(f(y.clone()), &y, &f);
+    }
     // Terminating: $m = h - 1 \wedge n = 0$
     // Otherwise:   $m = h \wedge n = c - 1$
-    return triple<N, N, Domain(F)>(m, n, y);
+    Triple::new(m, n, y)
 }
 
+/*
 
 //
 //  Chapter 3. Associative operations
