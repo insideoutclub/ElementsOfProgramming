@@ -25,6 +25,8 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(clippy::many_single_char_names, clippy::use_self)]
 use num::{One, Zero};
+mod integers;
+use integers::{even, half_nonnegative, odd, one, zero, Integer, Regular};
 
 //
 //  Chapter 1. Foundations
@@ -48,23 +50,17 @@ pub fn square(n: i32) -> i32 {
     n * n
 }
 
-pub trait BinaryOperation {
-    type Domain;
-    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
-}
+pub trait BinaryOperation<Domain>: Fn(&Domain, &Domain) -> Domain {}
+impl<Domain, T> BinaryOperation<Domain> for T where T: Fn(&Domain, &Domain) -> Domain {}
 
-pub fn square_with_op<Op>(x: &Op::Domain, op: &Op) -> Op::Domain
+pub fn square_with_op<Domain, Op>(x: &Domain, op: &Op) -> Domain
 where
-    Op: BinaryOperation,
+    Op: BinaryOperation<Domain>,
 {
-    op.call(x, x)
+    op(x, x)
 }
 
 // Function object for equality
-
-pub trait Regular: Clone + Default + Eq {
-    type UnderlyingType;
-}
 
 pub struct Equal<T>(std::marker::PhantomData<T>)
 where
@@ -111,7 +107,7 @@ where
     T0: Regular,
     T1: Regular,
 {
-    fn _new(m0: T0, m1: T1) -> Self {
+    fn new(m0: T0, m1: T1) -> Self {
         Self { m0, m1 }
     }
 }
@@ -182,10 +178,8 @@ pub fn euclidean_norm_3(x: f64, y: f64, z: f64) -> f64 {
     (x * x + y * y + z * z).sqrt()
 } // ternary operation
 
-pub trait Integer: One + Ord + Regular + std::ops::Sub<Self, Output = Self> + Zero {}
-
 pub trait Transformation<Domain>: Fn(Domain) -> Domain {
-    type DistanceType: Integer;
+    type DistanceType: integers::Integer;
 }
 
 pub fn power_unary<Domain, F, N>(mut x: Domain, mut n: N, f: &F) -> Domain
@@ -286,14 +280,14 @@ where
     x == &f(collision_point_nonterminating_orbit(x.clone(), f))
 }
 
-pub fn circular<Domain, F, P>(x: &Domain, f: F, p: P) -> bool
+pub fn circular<Domain, F, P>(x: &Domain, f: &F, p: &P) -> bool
 where
     Domain: Regular,
     F: Transformation<Domain>,
     P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    let y = collision_point(x.clone(), &f, &p);
+    let y = collision_point(x.clone(), f, p);
     p(&y) && x == &f(y)
 }
 
@@ -318,14 +312,14 @@ where
     convergent_point(x.clone(), f(collision_point_nonterminating_orbit(x, f)), f)
 }
 
-pub fn connection_point<Domain, F, P>(x: Domain, f: &F, p: P) -> Domain
+pub fn connection_point<Domain, F, P>(x: Domain, f: &F, p: &P) -> Domain
 where
     Domain: Regular,
     F: Transformation<Domain>,
     P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    let y = collision_point(x.clone(), f, &p);
+    let y = collision_point(x.clone(), f, p);
     if !p(&y) {
         return y;
     }
@@ -338,39 +332,39 @@ pub fn convergent_point_guarded<Domain, F>(
     mut x0: Domain,
     mut x1: Domain,
     y: &Domain,
-    f: F,
+    f: &F,
 ) -> Domain
 where
     Domain: Regular,
     F: Transformation<Domain>,
 {
     // Precondition: $\func{reachable}(x0, y, f) \wedge \func{reachable}(x1, y, f)$
-    let d0 = distance(x0.clone(), &y, &f);
-    let d1 = distance(x1.clone(), &y, &f);
+    let d0 = distance(x0.clone(), y, f);
+    let d1 = distance(x1.clone(), y, f);
     match d0.cmp(&d1) {
-        std::cmp::Ordering::Less => x1 = power_unary(x1, d1 - d0, &f),
-        std::cmp::Ordering::Greater => x0 = power_unary(x0, d0 - d1, &f),
+        std::cmp::Ordering::Less => x1 = power_unary(x1, d1 - d0, f),
+        std::cmp::Ordering::Greater => x0 = power_unary(x0, d0 - d1, f),
         _ => (),
     }
-    convergent_point(x0, x1, &f)
+    convergent_point(x0, x1, f)
 }
 
 pub fn orbit_structure_nonterminating_orbit<Domain, F>(
     x: Domain,
-    f: F,
+    f: &F,
 ) -> Triple<F::DistanceType, F::DistanceType, Domain>
 where
     Domain: Regular,
     F: Transformation<Domain>,
 {
-    let y = connection_point_nonterminating_orbit(x.clone(), &f);
-    Triple::new(distance(x, &y, &f), distance(f(y.clone()), &y, &f), y)
+    let y = connection_point_nonterminating_orbit(x.clone(), f);
+    Triple::new(distance(x, &y, f), distance(f(y.clone()), &y, f), y)
 }
 
 pub fn orbit_structure<Domain, F, P>(
     x: Domain,
-    f: F,
-    p: P,
+    f: &F,
+    p: &P,
 ) -> Triple<F::DistanceType, F::DistanceType, Domain>
 where
     Domain: Regular,
@@ -378,431 +372,593 @@ where
     P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    let y = connection_point(x.clone(), &f, &p);
-    let m = distance(x, &y, &f);
+    let y = connection_point(x.clone(), f, p);
+    let m = distance(x, &y, f);
     let mut n = F::DistanceType::zero();
     if p(&y) {
-        n = distance(f(y.clone()), &y, &f);
+        n = distance(f(y.clone()), &y, f);
     }
     // Terminating: $m = h - 1 \wedge n = 0$
     // Otherwise:   $m = h \wedge n = c - 1$
     Triple::new(m, n, y)
 }
 
-/*
-
 //
 //  Chapter 3. Associative operations
 //
 
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_left_associated(Domain(Op) a, I n, Op op)
+pub fn power_left_associated<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+where
+    Domain: Regular,
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $n > 0$
-    if (n == I(1)) return a;
-    return op(power_left_associated(a, n - I(1), op), a);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_right_associated(Domain(Op) a, I n, Op op)
-{
-    // Precondition: $n > 0$
-    if (n == I(1)) return a;
-    return op(a, power_right_associated(a, n - I(1), op));
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_0(Domain(Op) a, I n, Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n > 0$
-    if (n == I(1)) return a;
-    if (n % I(2) == I(0))
-        return power_0(op(a, a), n / I(2), op);
-    return op(power_0(op(a, a), n / I(2), op), a);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_1(Domain(Op) a, I n, Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n > 0$
-    if (n == I(1)) return a;
-    Domain(Op) r = power_1(op(a, a), n / I(2), op);
-    if (n % I(2) != I(0)) r = op(r, a);
-    return r;
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_0(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    if (n == I(0)) return r;
-    if (n % I(2) != I(0)) r = op(r, a);
-    return power_accumulate_0(r, op(a, a), n / I(2), op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_1(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    if (n == I(0)) return r;
-    if (n == I(1)) return op(r, a);
-    if (n % I(2) != I(0)) r = op(r, a);
-    return power_accumulate_1(r, op(a, a), n / I(2), op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_2(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    if (n % I(2) != I(0)) {
-        r = op(r, a);
-        if (n == I(1)) return r;
-    } else if (n == I(0)) return r;
-    return power_accumulate_2(r, op(a, a), n / I(2), op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_3(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    if (n % I(2) != I(0)) {
-        r = op(r, a);
-        if (n == I(1)) return r;
-    } else if (n == I(0)) return r;
-    a = op(a, a);
-    n = n / I(2);
-    return power_accumulate_3(r, a, n, op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_4(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    while (true) {
-        if (n % I(2) != I(0)) {
-            r = op(r, a);
-            if (n == I(1)) return r;
-        } else if (n == I(0)) return r;
-        a = op(a, a);
-        n = n / I(2);
+    if n == I::one() {
+        return a;
     }
+    op(&power_left_associated(a.clone(), n - I::one(), op), &a)
 }
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_positive_0(Domain(Op) r,
-                                       Domain(Op) a, I n,
-                                       Op op)
+pub fn power_right_associated<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+where
+    Domain: Regular,
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $n > 0$
+    if n == I::one() {
+        return a;
+    }
+    op(&a.clone(), &power_right_associated(a, n - I::one(), op))
+}
+
+pub fn power_0<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
-    while (true) {
-        if (n % I(2) != I(0)) {
-            r = op(r, a);
-            if (n == I(1)) return r;
+    if n == I::one() {
+        return a;
+    }
+    if n.clone() % I::two() == I::zero() {
+        return power_0(op(&a, &a), n / I::two(), op);
+    }
+    op(&power_0(op(&a, &a), n / I::two(), op), &a)
+}
+
+pub fn power_1<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n > 0$
+    if n == I::one() {
+        return a;
+    }
+    let mut r = power_1(op(&a, &a), n.clone() / I::two(), op);
+    if n % I::two() != I::zero() {
+        r = op(&r, &a);
+    }
+    r
+}
+
+pub fn power_accumulate_0<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n \geq 0$
+    if n == I::zero() {
+        return r;
+    }
+    if n.clone() % I::two() != I::zero() {
+        r = op(&r, a);
+    }
+    power_accumulate_0(r, &op(a, a), n / I::two(), op)
+}
+
+pub fn power_accumulate_1<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n \geq 0$
+    if n == I::zero() {
+        return r;
+    }
+    if n == I::one() {
+        return op(&r, a);
+    }
+    if n.clone() % I::two() != I::zero() {
+        r = op(&r, a);
+    }
+    power_accumulate_1(r, &op(a, a), n / I::two(), op)
+}
+
+pub fn power_accumulate_2<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n \geq 0$
+    if n.clone() % I::two() != I::zero() {
+        r = op(&r, a);
+        if n == I::one() {
+            return r;
         }
-        a = op(a, a);
-        n = n / I(2);
+    } else if n == I::zero() {
+        return r;
     }
+    power_accumulate_2(r, &op(a, a), n / I::two(), op)
 }
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_5(Domain(Op) r, Domain(Op) a, I n,
-                              Op op)
+pub fn power_accumulate_3<Domain, I, Op>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
-    if (n == I(0)) return r;
-    return power_accumulate_positive_0(r, a, n, op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_2(Domain(Op) a, I n, Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n > 0$
-    return power_accumulate_5(a, a, n - I(1), op);
-}
-
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_3(Domain(Op) a, I n, Op op)
-{
-    // Precondition: $\func{associative}(op) \wedge n > 0$
-    while (n % I(2) == I(0)) {
-        a = op(a, a);
-        n = n / I(2);
+    if n.clone() % I::two() != I::zero() {
+        r = op(&r, &a);
+        if n == I::one() {
+            return r;
+        }
+    } else if n == I::zero() {
+        return r;
     }
-    n = n / I(2);
-    if (n == I(0)) return a;
-    return power_accumulate_positive_0(a, op(a, a), n, op);
+    a = op(&a, &a);
+    n = n / I::two();
+    power_accumulate_3(r, a, n, op)
 }
 
+pub fn power_accumulate_4<Domain, I, Op>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n \geq 0$
+    loop {
+        if n.clone() % I::two() != I::zero() {
+            r = op(&r, &a);
+            if n == I::one() {
+                return r;
+            }
+        } else if n == I::zero() {
+            return r;
+        }
+        a = op(&a, &a);
+        n = n / I::two();
+    }
+}
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate_positive(Domain(Op) r,
-                                     Domain(Op) a, I n,
-                                     Op op)
+pub fn power_accumulate_positive_0<Domain, I, Op>(
+    mut r: Domain,
+    mut a: Domain,
+    mut n: I,
+    op: &Op,
+) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n > 0$
+    loop {
+        if n.clone() % I::two() != I::zero() {
+            r = op(&r, &a);
+            if n == I::one() {
+                return r;
+            }
+        }
+        a = op(&a, &a);
+        n = n / I::two();
+    }
+}
+
+pub fn power_accumulate_5<Domain, I, Op>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n \geq 0$
+    if n == I::zero() {
+        return r;
+    }
+    power_accumulate_positive_0(r, a, n, op)
+}
+
+pub fn power_2<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+where
+    Domain: Regular,
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n > 0$
+    power_accumulate_5(a.clone(), a, n - I::one(), op)
+}
+
+pub fn power_3<Domain, I, Op>(mut a: Domain, mut n: I, op: &Op) -> Domain
+where
+    Domain: Regular,
+    I: Integer,
+    Op: BinaryOperation<Domain>,
+{
+    // Precondition: $\func{associative}(op) \wedge n > 0$
+    while n.clone() % I::two() == I::zero() {
+        a = op(&a, &a);
+        n = n / I::two();
+    }
+    n = n / I::two();
+    if n == I::zero() {
+        return a;
+    }
+    power_accumulate_positive_0(a.clone(), op(&a, &a), n, op)
+}
+
+pub fn power_accumulate_positive<Domain, I, Op>(
+    mut r: Domain,
+    mut a: Domain,
+    mut n: I,
+    op: &Op,
+) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
-    while (true) {
-      if (odd(n)) {
-          r = op(r, a);
-          if (one(n)) return r;
-      }
-      a = op(a, a);
-      n = half_nonnegative(n);
+    loop {
+        if odd(n.clone()) {
+            r = op(&r, &a);
+            if one(&n) {
+                return r;
+            }
+        }
+        a = op(&a, &a);
+        n = half_nonnegative(n);
     }
 }
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power_accumulate(Domain(Op) r, Domain(Op) a, I n,
-                            Op op)
+pub fn power_accumulate<Domain, I, Op>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge \neg \func{negative}(n)$
-    if (zero(n)) return r;
-    return power_accumulate_positive(r, a, n, op);
+    if zero(&n) {
+        return r;
+    }
+    power_accumulate_positive(r, a, n, op)
 }
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power(Domain(Op) a, I n, Op op)
+pub fn power<Domain, I, Op>(mut a: Domain, mut n: I, op: &Op) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
-    while (even(n)) {
-        a = op(a, a);
+    while even(n.clone()) {
+        a = op(&a, &a);
         n = half_nonnegative(n);
     }
     n = half_nonnegative(n);
-    if (zero(n)) return a;
-    return power_accumulate_positive(a, op(a, a), n, op);
+    if zero(&n) {
+        return a;
+    }
+    let op_a_a = op(&a, &a);
+    power_accumulate_positive(a, op_a_a, n, op)
 }
 
-template<typename I, typename Op>
-    requires(Integer(I) && BinaryOperation(Op))
-Domain(Op) power(Domain(Op) a, I n, Op op, Domain(Op) id)
+pub fn power_with_identity<Domain, I, Op>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
+where
+    I: Integer,
+    Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge \neg \func{negative}(n)$
-    if (zero(n)) return id;
-    return power(a, n, op);
+    if zero(&n) {
+        return id;
+    }
+    power(a, n, op)
 }
 
-template<typename I>
-    requires(Integer(I))
-pair<I, I> fibonacci_matrix_multiply(const pair<I, I>& x,
-                                     const pair<I, I>& y)
+pub fn fibonacci_matrix_multiply<I>(x: &Pair<I, I>, y: &Pair<I, I>) -> Pair<I, I>
+where
+    I: Integer,
 {
-    return pair<I, I>(
-        x.m0 * (y.m1 + y.m0) + x.m1 * y.m0,
-        x.m0 * y.m0 + x.m1 * y.m1);
+    Pair::new(
+        x.m0.clone() * (y.m1.clone() + y.m0.clone()) + x.m1.clone() * y.m0.clone(),
+        x.m0.clone() * y.m0.clone() + x.m1.clone() * y.m1.clone(),
+    )
 }
 
-template<typename I>
-    requires(Integer(I))
-I fibonacci(I n)
+pub fn fibonacci<I>(n: I) -> I
+where
+    I: Integer,
 {
     // Precondition: $n \geq 0$
-    if (n == I(0)) return I(0);
-    return power(pair<I, I>(I(1), I(0)),
-                 n,
-                 fibonacci_matrix_multiply<I>).m0;
+    if n == I::zero() {
+        return I::zero();
+    };
+    power(
+        Pair::new(I::one(), I::zero()),
+        n,
+        &fibonacci_matrix_multiply,
+    )
+    .m0
 }
-
 
 //
 //  Chapter 4. Linear orderings
 //
 
-
 // Exercise 4.1: Give an example of a relation that is neither strict nor reflexive
 // Exercise 4.2: Give an example of a symmetric relation that is not transitive
 // Exercise 4.3: Give an example of a symmetric relation that is not reflexive
 
+pub trait Relation {
+    type Domain;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> bool;
+}
 
-template<typename R>
-    requires(Relation(R))
-struct complement
+struct Complement<R>
+where
+    R: Relation,
 {
-    R r;
-    complement(R r) : r(r) { }
-    bool operator()(const Domain(R)& x, const Domain(R)& y)
-    {
-        return !r(x, y);
+    r: R,
+}
+
+impl<R> Complement<R>
+where
+    R: Relation,
+{
+    fn _new(r: R) -> Self {
+        Self { r }
     }
-};
+}
 
-template<typename R>
-    requires(Relation(R))
-struct input_type< complement<R>, 0>
+impl<R> Relation for Complement<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) type;
-};
-
-template<typename R>
-    requires(Relation(R))
-struct converse
-{
-    R r;
-    converse(R r) : r(r) { }
-    bool operator()(const Domain(R)& x, const Domain(R)& y)
-    {
-        return r(y, x);
+    type Domain = R::Domain;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> bool {
+        !self.r.call(x, y)
     }
-};
+}
 
-template<typename R>
-    requires(Relation(R))
-struct input_type< converse<R>, 0>
+impl<R> Procedure for Complement<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) type;
-};
+    type InputType0 = R::Domain;
+}
 
-template<typename R>
-    requires(Relation(R))
-struct complement_of_converse
+struct Converse<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) T;
-    R r;
-    complement_of_converse(const R& r) : r(r) { }
-    bool operator()(const T& a, const T& b)
-    {
-        return !r(b, a);
+    r: R,
+}
+
+impl<R> Converse<R>
+where
+    R: Relation,
+{
+    fn _new(r: R) -> Self {
+        Self { r }
     }
-};
+}
 
-template<typename R>
-    requires(Relation(R))
-struct input_type< complement_of_converse<R>, 0>
+impl<R> Relation for Converse<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) type;
-};
-
-template<typename R>
-   requires(Relation(R))
-struct symmetric_complement
-{
-    R r;
-    symmetric_complement(R r) : r(r) { }
-    bool operator()(const Domain(R)& a, const Domain(R)& b)
-    {
-        return !r(a, b) && !r(b, a);
+    type Domain = R::Domain;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> bool {
+        self.r.call(y, x)
     }
-};
+}
 
-template<typename R>
-    requires(Relation(R))
-struct input_type< symmetric_complement<R>, 0>
+impl<R> Procedure for Converse<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) type;
-};
+    type InputType0 = R::Domain;
+}
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_0_2(const Domain(R)& a,
-                            const Domain(R)& b, R r)
+struct ComplementOfConverse<R>
+where
+    R: Relation,
+{
+    r: R,
+}
+
+impl<R> ComplementOfConverse<R>
+where
+    R: Relation,
+{
+    fn _new(r: R) -> Self {
+        Self { r }
+    }
+}
+
+impl<R> Relation for ComplementOfConverse<R>
+where
+    R: Relation,
+{
+    type Domain = R::Domain;
+    fn call(&self, a: &Self::Domain, b: &Self::Domain) -> bool {
+        !self.r.call(b, a)
+    }
+}
+
+impl<R> Procedure for ComplementOfConverse<R>
+where
+    R: Relation,
+{
+    type InputType0 = R::Domain;
+}
+
+struct SymmetricComplement<R>
+where
+    R: Relation,
+{
+    r: R,
+}
+
+impl<R> SymmetricComplement<R>
+where
+    R: Relation,
+{
+    fn _new(r: R) -> Self {
+        SymmetricComplement { r }
+    }
+}
+
+impl<R> Relation for SymmetricComplement<R>
+where
+    R: Relation,
+{
+    type Domain = R::Domain;
+    fn call(&self, a: &Self::Domain, b: &Self::Domain) -> bool {
+        !self.r.call(a, b) && !self.r.call(b, a)
+    }
+}
+
+impl<R> Procedure for SymmetricComplement<R>
+where
+    R: Relation,
+{
+    type InputType0 = R::Domain;
+}
+
+pub fn select_0_2<'a, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+where
+    R: Relation,
 {
     // Precondition: $\func{weak\_ordering}(r)$
-    if (r(b, a)) return b;
-    return a;
+    if r.call(b, a) {
+        return b;
+    }
+    a
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_2(const Domain(R)& a,
-                            const Domain(R)& b, R r)
+pub fn select_1_2<'a, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+where
+    R: Relation,
 {
     // Precondition: $\func{weak\_ordering}(r)$
-    if (r(b, a)) return a;
-    return b;
+    if r.call(b, a) {
+        return a;
+    }
+    b
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_0_3(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c, R r)
+pub fn select_0_3<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
 {
-    return select_0_2(select_0_2(a, b, r), c, r);
+    select_0_2(select_0_2(a, b, r), c, r)
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_2_3(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c, R r)
+pub fn select_2_3<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
 {
-    return select_1_2(select_1_2(a, b, r), c, r);
+    select_1_2(select_1_2(a, b, r), c, r)
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_3_ab(const Domain(R)& a,
-                               const Domain(R)& b,
-                               const Domain(R)& c, R r)
+pub fn select_1_3_ab<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
 {
-    if (!r(c, b)) return b;     // $a$, $b$, $c$ are sorted
-    return select_1_2(a, c, r); // $b$ is not the median
+    if !r.call(c, b) {
+        return b;
+    } // $a$, $b$, $c$ are sorted
+    select_1_2(a, c, r) // $b$ is not the median
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_3(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c, R r)
+pub fn select_1_3<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
 {
-    if (r(b, a)) return select_1_3_ab(b, a, c, r);
-    return              select_1_3_ab(a, b, c, r);
+    if r.call(b, a) {
+        return select_1_3_ab(b, a, c, r);
+    }
+    select_1_3_ab(a, b, c, r)
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4_ab_cd(const Domain(R)& a,
-                                  const Domain(R)& b,
-                                  const Domain(R)& c,
-                                  const Domain(R)& d, R r) {
-    if (r(c, a)) return select_0_2(a, d, r);
-    return              select_0_2(b, c, r);
+pub fn select_1_4_ab_cd<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+{
+    if r.call(c, a) {
+        return select_0_2(a, d, r);
+    }
+    select_0_2(b, c, r)
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4_ab(const Domain(R)& a,
-                               const Domain(R)& b,
-                               const Domain(R)& c,
-                               const Domain(R)& d, R r) {
-    if (r(d, c)) return select_1_4_ab_cd(a, b, d, c, r);
-    return              select_1_4_ab_cd(a, b, c, d, r);
+pub fn select_1_4_ab<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+{
+    if r.call(d, c) {
+        return select_1_4_ab_cd(a, b, d, c, r);
+    }
+    select_1_4_ab_cd(a, b, c, d, r)
 }
 
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c,
-                            const Domain(R)& d, R r) {
-    if (r(b, a)) return select_1_4_ab(b, a, c, d, r);
-    return              select_1_4_ab(a, b, c, d, r);
+pub fn select_1_4<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+{
+    if r.call(b, a) {
+        return select_1_4_ab(b, a, c, d, r);
+    }
+    select_1_4_ab(a, b, c, d, r)
 }
 
 // Exercise 4.4: select_2_4
 
-
+/*
 // Order selection procedures with stability indices
 
 template<bool strict, typename R>
