@@ -958,55 +958,62 @@ where
 
 // Exercise 4.4: select_2_4
 
-/*
 // Order selection procedures with stability indices
 
-template<bool strict, typename R>
-    requires(Relation(R))
-struct compare_strict_or_reflexive;
+#[macro_use]
+extern crate typenum;
+use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True};
 
-template<typename R>
-    requires(Relation(R))
-struct compare_strict_or_reflexive<true, R> // strict
+pub trait CompareStrictOrReflexive<R>
+where
+    R: Relation,
 {
-    bool operator()(const Domain(R)& a,
-                    const Domain(R)& b, R r)
-    {
-        return r(a, b);
-    }
-};
-
-template<typename R>
-    requires(Relation(R))
-struct compare_strict_or_reflexive<false, R> // reflexive
-{
-    bool operator()(const Domain(R)& a,
-                    const Domain(R)& b, R r)
-    {
-        return !r(b, a); // $\func{complement\_of\_converse}_r(a, b)$
-    }
-};
-
-template<int ia, int ib, typename R>
-    requires(Relation(R))
-const Domain(R)& select_0_2(const Domain(R)& a,
-                            const Domain(R)& b, R r)
-{
-    compare_strict_or_reflexive<(ia < ib), R> cmp;
-    if (cmp(b, a, r)) return b;
-    return a;
+    fn call(a: &R::Domain, b: &R::Domain, r: &R) -> bool;
 }
 
-template<int ia, int ib, typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_2(const Domain(R)& a,
-                            const Domain(R)& b, R r)
+impl<R> CompareStrictOrReflexive<R> for True
+where
+    R: Relation, // strict
 {
-    compare_strict_or_reflexive<(ia < ib), R> cmp;
-    if (cmp(b, a, r)) return a;
-    return b;
+    fn call(a: &R::Domain, b: &R::Domain, r: &R) -> bool {
+        r.call(a, b)
+    }
 }
 
+impl<R> CompareStrictOrReflexive<R> for False
+where
+    R: Relation, // reflexive
+{
+    fn call(a: &R::Domain, b: &R::Domain, r: &R) -> bool {
+        !r.call(b, a) // $\func{complement\_of\_converse}_r(a, b)$
+    }
+}
+
+pub fn select_0_2_ex<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
+    <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+{
+    if <<IA as IsLess<IB>>::Output>::call(b, a, r) {
+        return b;
+    }
+    a
+}
+
+pub fn select_1_2_ex<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
+    <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+{
+    if <<IA as IsLess<IB>>::Output>::call(b, a, r) {
+        return a;
+    }
+    b
+}
+
+/*
 template<int ia, int ib, int ic, int id, typename R>
     requires(Relation(R))
 const Domain(R)& select_1_4_ab_cd(const Domain(R)& a,
