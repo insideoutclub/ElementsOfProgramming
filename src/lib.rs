@@ -23,7 +23,11 @@
 #include "integers.h"
 */
 #![deny(clippy::all, clippy::pedantic)]
-#![allow(clippy::many_single_char_names, clippy::use_self)]
+#![allow(
+    clippy::many_single_char_names,
+    clippy::type_repetition_in_bounds,
+    clippy::use_self
+)]
 use num::{One, Zero};
 mod integers;
 use integers::{even, half_nonnegative, odd, one, zero, Integer, Regular};
@@ -67,7 +71,7 @@ where
     T: Regular;
 
 pub trait Procedure {
-    type InputType0;
+    type InputType;
 }
 
 impl<T> Equal<T>
@@ -79,11 +83,11 @@ where
     }
 }
 
-impl<T> Procedure for Equal<T>
+impl<T> Procedure for (Equal<T>, Z0)
 where
     T: Regular,
 {
-    type InputType0 = T;
+    type InputType = T;
 }
 
 // type pair (see chapter 12 of Elements of Programming)
@@ -700,7 +704,7 @@ pub trait Relation {
     fn call(&self, x: &Self::Domain, y: &Self::Domain) -> bool;
 }
 
-struct Complement<R>
+pub struct Complement<R>
 where
     R: Relation,
 {
@@ -726,14 +730,14 @@ where
     }
 }
 
-impl<R> Procedure for Complement<R>
+impl<R> Procedure for (Complement<R>, Z0)
 where
     R: Relation,
 {
-    type InputType0 = R::Domain;
+    type InputType = R::Domain;
 }
 
-struct Converse<R>
+pub struct Converse<R>
 where
     R: Relation,
 {
@@ -759,14 +763,14 @@ where
     }
 }
 
-impl<R> Procedure for Converse<R>
+impl<R> Procedure for (Converse<R>, Z0)
 where
     R: Relation,
 {
-    type InputType0 = R::Domain;
+    type InputType = R::Domain;
 }
 
-struct ComplementOfConverse<R>
+pub struct ComplementOfConverse<R>
 where
     R: Relation,
 {
@@ -792,14 +796,14 @@ where
     }
 }
 
-impl<R> Procedure for ComplementOfConverse<R>
+impl<R> Procedure for (ComplementOfConverse<R>, Z0)
 where
     R: Relation,
 {
-    type InputType0 = R::Domain;
+    type InputType = R::Domain;
 }
 
-struct SymmetricComplement<R>
+pub struct SymmetricComplement<R>
 where
     R: Relation,
 {
@@ -825,11 +829,11 @@ where
     }
 }
 
-impl<R> Procedure for SymmetricComplement<R>
+impl<R> Procedure for (SymmetricComplement<R>, Z0)
 where
     R: Relation,
 {
-    type InputType0 = R::Domain;
+    type InputType = R::Domain;
 }
 
 pub fn select_0_2<'a, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
@@ -962,7 +966,7 @@ where
 
 #[macro_use]
 extern crate typenum;
-use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True};
+use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2, P3, P4, Z0};
 
 pub trait CompareStrictOrReflexive<R>
 where
@@ -1088,109 +1092,185 @@ where
     select_1_4_ab_ex::<IA, IB, IC, ID, R>(a, b, c, d, r)
 }
 
-/*
-template<int ia, int ib, int ic, int id, int ie, typename R>
-    requires(Relation(R))
-const Domain(R)& select_2_5_ab_cd(const Domain(R)& a,
-                                  const Domain(R)& b,
-                                  const Domain(R)& c,
-                                  const Domain(R)& d,
-                                  const Domain(R)& e, R r)
+pub fn select_2_5_ab_cd<'a, IA, IB, IC, ID, IE, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    e: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<IE> + IsLessPrivate<IE, Compare<IA, IE>>,
+    <IA as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<ID> + IsLessPrivate<ID, Compare<IB, ID>>,
+    <IB as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IE> + IsLessPrivate<IE, Compare<IB, IE>>,
+    <IB as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IB> + IsLessPrivate<IB, Compare<IC, IB>>,
+    <IC as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IE> + IsLessPrivate<IE, Compare<IC, IE>>,
+    <IC as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IB> + IsLessPrivate<IB, Compare<ID, IB>>,
+    <ID as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IE> + IsLessPrivate<IE, Compare<ID, IE>>,
+    <ID as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
 {
-    compare_strict_or_reflexive<(ia < ic), R> cmp;
-    if (cmp(c, a, r)) return
-        select_1_4_ab<ia,ib,id,ie>(a, b, d, e, r);
-    return
-        select_1_4_ab<ic,id,ib,ie>(c, d, b, e, r);
+    if <op!(IA < IC)>::call(c, a, r) {
+        return select_1_4_ab_ex::<IA, IB, ID, IE, R>(a, b, d, e, r);
+    }
+    select_1_4_ab_ex::<IC, ID, IB, IE, R>(c, d, b, e, r)
 }
 
-template<int ia, int ib, int ic, int id, int ie, typename R>
-    requires(Relation(R))
-const Domain(R)& select_2_5_ab(const Domain(R)& a,
-                               const Domain(R)& b,
-                               const Domain(R)& c,
-                               const Domain(R)& d,
-                               const Domain(R)& e, R r)
+pub fn select_2_5_ab<'a, IA, IB, IC, ID, IE, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    e: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<IE> + IsLessPrivate<IE, Compare<IA, IE>>,
+    <IA as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IC> + IsLessPrivate<IC, Compare<IB, IC>>,
+    <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<ID> + IsLessPrivate<ID, Compare<IB, ID>>,
+    <IB as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IE> + IsLessPrivate<IE, Compare<IB, IE>>,
+    <IB as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IB> + IsLessPrivate<IB, Compare<IC, IB>>,
+    <IC as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<ID> + IsLessPrivate<ID, Compare<IC, ID>>,
+    <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IE> + IsLessPrivate<IE, Compare<IC, IE>>,
+    <IC as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IB> + IsLessPrivate<IB, Compare<ID, IB>>,
+    <ID as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IE> + IsLessPrivate<IE, Compare<ID, IE>>,
+    <ID as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
 {
-    compare_strict_or_reflexive<(ic < id), R> cmp;
-    if (cmp(d, c, r)) return
-        select_2_5_ab_cd<ia,ib,id,ic,ie>(
-                          a, b, d, c, e, r);
-    return
-        select_2_5_ab_cd<ia,ib,ic,id,ie>(
-                          a, b, c, d, e, r);
+    if <op!(IC < ID)>::call(d, c, r) {
+        return select_2_5_ab_cd::<IA, IB, ID, IC, IE, R>(a, b, d, c, e, r);
+    }
+    select_2_5_ab_cd::<IA, IB, IC, ID, IE, R>(a, b, c, d, e, r)
 }
 
-template<int ia, int ib, int ic, int id, int ie, typename R>
-    requires(Relation(R))
-const Domain(R)& select_2_5(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c,
-                            const Domain(R)& d,
-                            const Domain(R)& e, R r)
+pub fn select_2_5<'a, IA, IB, IC, ID, IE, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    e: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
+    <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<IE> + IsLessPrivate<IE, Compare<IA, IE>>,
+    <IA as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IC> + IsLessPrivate<IC, Compare<IB, IC>>,
+    <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<ID> + IsLessPrivate<ID, Compare<IB, ID>>,
+    <IB as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IE> + IsLessPrivate<IE, Compare<IB, IE>>,
+    <IB as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IA> + IsLessPrivate<IA, Compare<IC, IA>>,
+    <IC as IsLess<IA>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IB> + IsLessPrivate<IB, Compare<IC, IB>>,
+    <IC as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<ID> + IsLessPrivate<ID, Compare<IC, ID>>,
+    <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<IE> + IsLessPrivate<IE, Compare<IC, IE>>,
+    <IC as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IA> + IsLessPrivate<IA, Compare<ID, IA>>,
+    <ID as IsLess<IA>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IB> + IsLessPrivate<IB, Compare<ID, IB>>,
+    <ID as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    ID: Cmp<IE> + IsLessPrivate<IE, Compare<ID, IE>>,
+    <ID as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
 {
-    compare_strict_or_reflexive<(ia < ib), R> cmp;
-    if (cmp(b, a, r)) return
-        select_2_5_ab<ib,ia,ic,id,ie>(b, a, c, d, e, r);
-    return
-        select_2_5_ab<ia,ib,ic,id,ie>(a, b, c, d, e, r);
+    if <op!(IA < IB)>::call(b, a, r) {
+        return select_2_5_ab::<IB, IA, IC, ID, IE, R>(b, a, c, d, e, r);
+    }
+    select_2_5_ab::<IA, IB, IC, ID, IE, R>(a, b, c, d, e, r)
 }
 
 // Exercise 4.5. Find an algorithm for median of 5 that does slightly fewer comparisons
 // on average
 
-
-template<typename R>
-    requires(Relation(R))
-const Domain(R)& median_5(const Domain(R)& a,
-                          const Domain(R)& b,
-                          const Domain(R)& c,
-                          const Domain(R)& d,
-                          const Domain(R)& e, R r)
+pub fn median_5<'a, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    e: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
 {
-    return select_2_5<0,1,2,3,4>(a, b, c, d, e, r);
+    select_2_5::<Z0, P1, P2, P3, P4, R>(a, b, c, d, e, r)
 }
-
 
 // Exercise 4.6. Prove the stability of every order selection procedure in this section
 // Exercise 4.7. Verify the correctness and stability of every order selection procedure
 // in this section by exhaustive testing
 
-
 // Natural total ordering
 
-template<typename T>
-    requires(TotallyOrdered(T))
-struct less
+#[derive(Default)]
+pub struct Less<T>(std::marker::PhantomData<T>)
+where
+    T: TotallyOrdered;
+
+impl<T> Relation for Less<T>
+where
+    T: TotallyOrdered,
 {
-    bool operator()(const T& x, const T& y)
-    {
-        return x < y;
+    type Domain = T;
+    fn call(&self, x: &T, y: &T) -> bool {
+        x < y
     }
-};
-
-template<typename T>
-    requires(TotallyOrdered(T))
-struct input_type<less<T>, 0>
-{
-    typedef T type;
-};
-
-template<typename T>
-    requires(TotallyOrdered(T))
-const T& min(const T& a, const T& b)
-{
-    return select_0_2(a, b, less<T>());
 }
 
-template<typename T>
-    requires(TotallyOrdered(T))
-const T& max(const T& a, const T& b)
+impl<T> Procedure for (Less<T>, Z0)
+where
+    T: TotallyOrdered,
 {
-    return select_1_2(a, b, less<T>());
+    type InputType = T;
 }
 
+pub fn min<'a, T>(a: &'a T, b: &'a T) -> &'a T
+where
+    T: Regular + TotallyOrdered,
+{
+    select_0_2(a, b, &Less::<T>::default())
+}
 
+pub fn max<'a, T>(a: &'a T, b: &'a T) -> &'a T
+where
+    T: Regular + TotallyOrdered,
+{
+    select_1_2(a, b, &Less::<T>::default())
+}
+
+/*
 // Clusters of related procedures: equality and ordering
 
 template<typename T>
