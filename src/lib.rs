@@ -995,7 +995,7 @@ where
     IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
     <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
 {
-    if <<IA as IsLess<IB>>::Output>::call(b, a, r) {
+    if <op!(IA < IB)>::call(b, a, r) {
         return b;
     }
     a
@@ -1007,55 +1007,88 @@ where
     IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
     <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
 {
-    if <<IA as IsLess<IB>>::Output>::call(b, a, r) {
+    if <op!(IA < IB)>::call(b, a, r) {
         return a;
     }
     b
 }
 
+pub fn select_1_4_ab_cd_ex<'a, IA, IB, IC, ID, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>> + Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IC> + IsLessPrivate<IC, Compare<IB, IC>>,
+    <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+{
+    if <op!(IA < IC)>::call(c, a, r) {
+        return select_0_2_ex::<IA, ID, R>(a, d, r);
+    }
+    select_0_2_ex::<IB, IC, R>(b, c, r)
+}
+
+pub fn select_1_4_ab_ex<'a, IA, IB, IC, ID, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IC> + IsLessPrivate<IC, Compare<IB, IC>>,
+    <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<ID> + IsLessPrivate<ID, Compare<IB, ID>>,
+    <IB as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<ID> + IsLessPrivate<ID, Compare<IC, ID>>,
+    <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+{
+    if <op!(IC < ID)>::call(d, c, r) {
+        return select_1_4_ab_cd_ex::<IA, IB, ID, IC, R>(a, b, d, c, r);
+    }
+    select_1_4_ab_cd_ex::<IA, IB, IC, ID, R>(a, b, c, d, r)
+}
+
+pub fn select_1_4_ex<'a, IA, IB, IC, ID, R>(
+    a: &'a R::Domain,
+    b: &'a R::Domain,
+    c: &'a R::Domain,
+    d: &'a R::Domain,
+    r: &R,
+) -> &'a R::Domain
+where
+    R: Relation,
+    IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
+    <IA as IsLess<IB>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<IC> + IsLessPrivate<IC, Compare<IA, IC>>,
+    <IA as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IA: Cmp<ID> + IsLessPrivate<ID, Compare<IA, ID>>,
+    <IA as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<IC> + IsLessPrivate<IC, Compare<IB, IC>>,
+    <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
+    IB: Cmp<ID> + IsLessPrivate<ID, Compare<IB, ID>>,
+    <IB as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+    IC: Cmp<ID> + IsLessPrivate<ID, Compare<IC, ID>>,
+    <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
+{
+    if <op!(IA < IB)>::call(b, a, r) {
+        return select_1_4_ab_ex::<IB, IA, IC, ID, R>(b, a, c, d, r);
+    }
+    select_1_4_ab_ex::<IA, IB, IC, ID, R>(a, b, c, d, r)
+}
+
 /*
-template<int ia, int ib, int ic, int id, typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4_ab_cd(const Domain(R)& a,
-                                  const Domain(R)& b,
-                                  const Domain(R)& c,
-                                  const Domain(R)& d, R r)
-{
-    compare_strict_or_reflexive<(ia < ic), R> cmp;
-    if (cmp(c, a, r)) return
-        select_0_2<ia,id>(a, d, r);
-    return
-        select_0_2<ib,ic>(b, c, r);
-}
-
-template<int ia, int ib, int ic, int id, typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4_ab(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c,
-                            const Domain(R)& d, R r)
-{
-    compare_strict_or_reflexive<(ic < id), R> cmp;
-    if (cmp(d, c, r)) return
-        select_1_4_ab_cd<ia,ib,id,ic>(a, b, d, c, r);
-    return
-        select_1_4_ab_cd<ia,ib,ic,id>(a, b, c, d, r);
-}
-
-template<int ia, int ib, int ic, int id, typename R>
-    requires(Relation(R))
-const Domain(R)& select_1_4(const Domain(R)& a,
-                            const Domain(R)& b,
-                            const Domain(R)& c,
-                            const Domain(R)& d, R r)
-{
-    compare_strict_or_reflexive<(ia < ib), R> cmp;
-    if (cmp(b, a, r)) return
-        select_1_4_ab<ib,ia,ic,id>(b, a, c, d, r);
-    return
-        select_1_4_ab<ia,ib,ic,id>(a, b, c, d, r);
-}
-
 template<int ia, int ib, int ic, int id, int ie, typename R>
     requires(Relation(R))
 const Domain(R)& select_2_5_ab_cd(const Domain(R)& a,
