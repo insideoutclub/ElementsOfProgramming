@@ -54,14 +54,24 @@ pub fn square(n: i32) -> i32 {
     n * n
 }
 
-pub trait BinaryOperation<Domain>: Fn(&Domain, &Domain) -> Domain {}
-impl<Domain, T> BinaryOperation<Domain> for T where T: Fn(&Domain, &Domain) -> Domain {}
+pub trait BinaryOperation<Domain> {
+    fn call(&self, x: &Domain, y: &Domain) -> Domain;
+}
+
+impl<Domain, T> BinaryOperation<Domain> for T
+where
+    T: Fn(&Domain, &Domain) -> Domain,
+{
+    fn call(&self, x: &Domain, y: &Domain) -> Domain {
+        self(x, y)
+    }
+}
 
 pub fn square_with_op<Domain, Op>(x: &Domain, op: &Op) -> Domain
 where
     Op: BinaryOperation<Domain>,
 {
-    op(x, x)
+    op.call(x, x)
 }
 
 // Function object for equality
@@ -91,7 +101,6 @@ where
 }
 
 // type pair (see chapter 12 of Elements of Programming)
-// model Regular(Pair)
 
 pub trait TotallyOrdered: Ord {}
 impl<T> TotallyOrdered for T where T: Ord {}
@@ -127,7 +136,6 @@ where
 }
 
 // type triple (see Exercise 12.2 of Elements of Programming)
-// model Regular(triple)
 
 #[derive(Clone, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Triple<T0, T1, T2>
@@ -391,33 +399,33 @@ where
 //  Chapter 3. Associative operations
 //
 
-pub fn power_left_associated<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_left_associated<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
 where
-    Domain: Regular,
     I: Integer,
     Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $n > 0$
     if n == I::one() {
         return a;
     }
-    op(&power_left_associated(a.clone(), n - I::one(), op), &a)
+    op.call(&power_left_associated(a.clone(), n - I::one(), op), &a)
 }
 
-pub fn power_right_associated<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_right_associated<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
 where
-    Domain: Regular,
     I: Integer,
     Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $n > 0$
     if n == I::one() {
         return a;
     }
-    op(&a.clone(), &power_right_associated(a, n - I::one(), op))
+    op.call(&a.clone(), &power_right_associated(a, n - I::one(), op))
 }
 
-pub fn power_0<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_0<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -427,12 +435,12 @@ where
         return a;
     }
     if n.clone() % I::two() == I::zero() {
-        return power_0(op(&a, &a), n / I::two(), op);
+        return power_0(op.call(&a, &a), n / I::two(), op);
     }
-    op(&power_0(op(&a, &a), n / I::two(), op), &a)
+    op.call(&power_0(op.call(&a, &a), n / I::two(), op), &a)
 }
 
-pub fn power_1<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_1<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -441,14 +449,14 @@ where
     if n == I::one() {
         return a;
     }
-    let mut r = power_1(op(&a, &a), n.clone() / I::two(), op);
+    let mut r = power_1(op.call(&a, &a), n.clone() / I::two(), op);
     if n % I::two() != I::zero() {
-        r = op(&r, &a);
+        r = op.call(&r, &a);
     }
     r
 }
 
-pub fn power_accumulate_0<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_0<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -458,12 +466,12 @@ where
         return r;
     }
     if n.clone() % I::two() != I::zero() {
-        r = op(&r, a);
+        r = op.call(&r, a);
     }
-    power_accumulate_0(r, &op(a, a), n / I::two(), op)
+    power_accumulate_0(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_1<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_1<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -473,51 +481,51 @@ where
         return r;
     }
     if n == I::one() {
-        return op(&r, a);
+        return op.call(&r, a);
     }
     if n.clone() % I::two() != I::zero() {
-        r = op(&r, a);
+        r = op.call(&r, a);
     }
-    power_accumulate_1(r, &op(a, a), n / I::two(), op)
+    power_accumulate_1(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_2<Domain, I, Op>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_2<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n.clone() % I::two() != I::zero() {
-        r = op(&r, a);
+        r = op.call(&r, a);
         if n == I::one() {
             return r;
         }
     } else if n == I::zero() {
         return r;
     }
-    power_accumulate_2(r, &op(a, a), n / I::two(), op)
+    power_accumulate_2(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_3<Domain, I, Op>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_accumulate_3<I, Op, Domain>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n.clone() % I::two() != I::zero() {
-        r = op(&r, &a);
+        r = op.call(&r, &a);
         if n == I::one() {
             return r;
         }
     } else if n == I::zero() {
         return r;
     }
-    a = op(&a, &a);
+    a = op.call(&a, &a);
     n = n / I::two();
     power_accumulate_3(r, a, n, op)
 }
 
-pub fn power_accumulate_4<Domain, I, Op>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_accumulate_4<I, Op, Domain>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -525,19 +533,19 @@ where
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     loop {
         if n.clone() % I::two() != I::zero() {
-            r = op(&r, &a);
+            r = op.call(&r, &a);
             if n == I::one() {
                 return r;
             }
         } else if n == I::zero() {
             return r;
         }
-        a = op(&a, &a);
+        a = op.call(&a, &a);
         n = n / I::two();
     }
 }
 
-pub fn power_accumulate_positive_0<Domain, I, Op>(
+pub fn power_accumulate_positive_0<I, Op, Domain>(
     mut r: Domain,
     mut a: Domain,
     mut n: I,
@@ -550,17 +558,17 @@ where
     // Precondition: $\func{associative}(op) \wedge n > 0$
     loop {
         if n.clone() % I::two() != I::zero() {
-            r = op(&r, &a);
+            r = op.call(&r, &a);
             if n == I::one() {
                 return r;
             }
         }
-        a = op(&a, &a);
+        a = op.call(&a, &a);
         n = n / I::two();
     }
 }
 
-pub fn power_accumulate_5<Domain, I, Op>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_5<I, Op, Domain>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -572,35 +580,35 @@ where
     power_accumulate_positive_0(r, a, n, op)
 }
 
-pub fn power_2<Domain, I, Op>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_2<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
 where
-    Domain: Regular,
     I: Integer,
     Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     power_accumulate_5(a.clone(), a, n - I::one(), op)
 }
 
-pub fn power_3<Domain, I, Op>(mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_3<I, Op, Domain>(mut a: Domain, mut n: I, op: &Op) -> Domain
 where
-    Domain: Regular,
     I: Integer,
     Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     while n.clone() % I::two() == I::zero() {
-        a = op(&a, &a);
+        a = op.call(&a, &a);
         n = n / I::two();
     }
     n = n / I::two();
     if n == I::zero() {
         return a;
     }
-    power_accumulate_positive_0(a.clone(), op(&a, &a), n, op)
+    let op_a_a = op.call(&a, &a);
+    power_accumulate_positive_0(a, op_a_a, n, op)
 }
 
-pub fn power_accumulate_positive<Domain, I, Op>(
+pub fn power_accumulate_positive<I, Op, Domain>(
     mut r: Domain,
     mut a: Domain,
     mut n: I,
@@ -613,17 +621,17 @@ where
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
     loop {
         if odd(n.clone()) {
-            r = op(&r, &a);
+            r = op.call(&r, &a);
             if one(&n) {
                 return r;
             }
         }
-        a = op(&a, &a);
+        a = op.call(&a, &a);
         n = half_nonnegative(n);
     }
 }
 
-pub fn power_accumulate<Domain, I, Op>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate<I, Op, Domain>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -635,25 +643,25 @@ where
     power_accumulate_positive(r, a, n, op)
 }
 
-pub fn power<Domain, I, Op>(mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power<I, Op, Domain>(mut a: Domain, mut n: I, op: &Op) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
 {
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
     while even(n.clone()) {
-        a = op(&a, &a);
+        a = op.call(&a, &a);
         n = half_nonnegative(n);
     }
     n = half_nonnegative(n);
     if zero(&n) {
         return a;
     }
-    let op_a_a = op(&a, &a);
+    let op_a_a = op.call(&a, &a);
     power_accumulate_positive(a, op_a_a, n, op)
 }
 
-pub fn power_with_identity<Domain, I, Op>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
+pub fn power_with_identity<I, Op, Domain>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -1303,8 +1311,9 @@ bool operator>=(const T& x, const T& y)
 
 
 // Exercise 4.8: Rewrite the algorithms in this chapter using three-valued comparison
+*/
 
-
+/*
 //
 //  Chapter 5. Ordered algebraic structures
 //
