@@ -40,7 +40,7 @@ pub trait Integer:
 
 // Exercise 3.2
 
-pub fn _successor<I>(a: I) -> I
+pub fn successor<I>(a: I) -> I
 where
     I: Integer,
 {
@@ -54,7 +54,7 @@ where
     a - I::one()
 }
 
-pub fn _twice<I>(a: I) -> I
+pub fn twice<I>(a: I) -> I
 where
     I: Integer,
 {
@@ -75,7 +75,7 @@ where
     a >> k
 }
 
-pub fn _binary_scale_up_nonnegative<I>(a: I, k: I) -> I
+pub fn binary_scale_up_nonnegative<I>(a: I, k: I) -> I
 where
     I: Integer,
 {

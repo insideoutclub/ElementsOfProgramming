@@ -30,7 +30,10 @@
 )]
 use num::{One, Zero};
 mod integers;
-use integers::{even, half_nonnegative, odd, one, zero, Integer, Regular};
+use integers::{
+    binary_scale_up_nonnegative, even, half_nonnegative, odd, one, successor, twice, zero, Integer,
+    Regular,
+};
 
 //
 //  Chapter 1. Foundations
@@ -1313,132 +1316,176 @@ bool operator>=(const T& x, const T& y)
 // Exercise 4.8: Rewrite the algorithms in this chapter using three-valued comparison
 */
 
-/*
 //
 //  Chapter 5. Ordered algebraic structures
 //
 
-
-template<typename T>
-    requires(AdditiveSemigroup(T))
-struct plus
-{
-    T operator()(const T& x, const T& y)
-    {
-        return x + y;
-    }
-};
-
-template<typename T>
-    requires(AdditiveSemigroup(T))
-struct input_type< plus<T>, 0 >
-{
-    typedef T type;
-};
-
-template<typename T>
-    requires(MultiplicativeSemigroup(T))
-struct multiplies
-{
-    T operator()(const T& x, const T& y)
-    {
-        return x * y;
-    }
-};
-
-template<typename T>
-    requires(MultiplicativeSemigroup(T))
-struct input_type< multiplies<T>, 0 >
-{
-    typedef T type;
-};
-
-template<typename Op>
-    requires(SemigroupOperation(Op)) // ***** or MultiplicativeSemigroup ?????
-struct multiplies_transformation
-{
-    Domain(Op) x;
-    Op op;
-    multiplies_transformation(Domain(Op) x, Op op) : x(x), op(op) { }
-    Domain(Op) operator()(const Domain(Op)& y)
-    {
-        return op(x, y);
-    }
-};
-
-template<typename Op>
-    requires(SemigroupOperation(Op))
-struct input_type< multiplies_transformation<Op>, 0 >
-{
-    typedef Domain(Op) type;
-};
-
-template<typename T>
-    requires(AdditiveGroup(T))
-struct negate
-{
-    T operator()(const T& x)
-    {
-        return -x;
-    }
-};
-
-template<typename T>
-    requires(AdditiveGroup(T))
-struct input_type< negate<T>, 0>
-{
-    typedef T type;
-};
-
-template<typename T>
-    requires(OrderedAdditiveGroup(T))
-T abs(const T& a)
-{
-    if (a < T(0)) return -a;
-    else          return  a;
+pub trait AdditiveSemigroup: Regular {
+    fn add(&self, x: &Self) -> Self;
 }
 
-template<typename T>
-    requires(CancellableMonoid(T))
-T slow_remainder(T a, T b)
+pub struct Plus<T>(std::marker::PhantomData<T>);
+
+impl<T> Plus<T>
+where
+    T: AdditiveSemigroup,
 {
-    // Precondition: $a \geq 0 \wedge b > 0$
-    while (b <= a) a = a - b;
-    return a;
+    fn _call(x: &T, y: &T) -> T {
+        x.add(y)
+    }
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-QuotientType(T) slow_quotient(T a, T b)
+impl<T> Procedure for (Plus<T>, Z0)
+where
+    T: AdditiveSemigroup,
+{
+    type InputType = T;
+}
+
+pub trait MultiplicativeSemigroup {
+    fn mul(&self, y: &Self) -> Self;
+}
+
+pub struct Multiplies<T>(std::marker::PhantomData<T>);
+
+impl<T> Multiplies<T>
+where
+    T: MultiplicativeSemigroup,
+{
+    fn _call(x: &T, y: &T) -> T {
+        x.mul(y)
+    }
+}
+
+impl<T> Procedure for (Multiplies<T>, Z0) {
+    type InputType = T;
+}
+
+pub trait SemigroupOperation<Domain>: BinaryOperation<Domain> {}
+impl<T, Domain> SemigroupOperation<Domain> for T where T: BinaryOperation<Domain> {}
+
+pub struct MultipliesTransformation<Op, Domain>
+where
+    Op: SemigroupOperation<Domain>,
+{
+    x: Domain,
+    op: Op,
+}
+
+impl<Op, Domain> MultipliesTransformation<Op, Domain>
+where
+    Op: SemigroupOperation<Domain>,
+{
+    pub fn new(x: Domain, op: Op) -> Self {
+        Self { x, op }
+    }
+    pub fn call(&self, y: &Domain) -> Domain {
+        self.op.call(&self.x, y)
+    }
+}
+
+impl<Op, Domain> Procedure for (MultipliesTransformation<Op, Domain>, Z0)
+where
+    Op: SemigroupOperation<Domain>,
+{
+    type InputType = Domain;
+}
+
+pub trait AdditiveMonoid: AdditiveSemigroup {
+    fn zero() -> Self;
+}
+
+pub trait AdditiveGroup: AdditiveMonoid {
+    fn neg(&self) -> Self;
+}
+
+pub struct Negate<T>(std::marker::PhantomData<T>);
+
+impl<T> Negate<T> {
+    pub fn call(x: &T) -> T
+    where
+        T: AdditiveGroup,
+    {
+        x.neg()
+    }
+}
+
+impl<T> Procedure for (Negate<T>, Z0) {
+    type InputType = T;
+}
+
+pub trait OrderedAdditiveGroup: OrderedAdditiveMonoid + AdditiveGroup {}
+
+pub fn abs<T>(a: T) -> T
+where
+    T: OrderedAdditiveGroup,
+{
+    if a < T::zero() {
+        a.neg()
+    } else {
+        a
+    }
+}
+
+pub trait OrderedAdditiveSemigroup: AdditiveSemigroup + TotallyOrdered {}
+
+pub trait OrderedAdditiveMonoid: AdditiveMonoid + OrderedAdditiveSemigroup {}
+
+pub trait CancellableMonoid: OrderedAdditiveMonoid {
+    fn sub(&self, x: &Self) -> Self;
+}
+
+pub fn slow_remainder<T>(mut a: T, b: &T) -> T
+where
+    T: CancellableMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    QuotientType(T) n(0);
-    while (b <= a) {
-        a = a - b;
+    while *b <= a {
+        a = a.sub(b);
+    }
+    a
+}
+
+pub trait ArchimedeanMonoid: CancellableMonoid {
+    type QuotientType: Integer;
+}
+
+pub fn slow_quotient<T>(mut a: T, b: &T) -> T::QuotientType
+where
+    T: ArchimedeanMonoid,
+{
+    // Precondition: $a \geq 0 \wedge b > 0$
+    let mut n = T::QuotientType::zero();
+    while *b <= a {
+        a = a.sub(b);
         n = successor(n);
     }
-    return n;
+    n
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T remainder_recursive(T a, T b)
+pub fn remainder_recursive<T>(mut a: T, b: &T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq b > 0$
-    if (a - b >= b) {
-        a = remainder_recursive(a, b + b);
-        if (a < b) return a;
+    if a.sub(b) >= *b {
+        a = remainder_recursive(a, &b.add(b));
+        if a < *b {
+            return a;
+        }
     }
-    return a - b;
+    a.sub(b)
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T remainder_nonnegative(T a, T b)
+pub fn remainder_nonnegative<T>(a: T, b: &T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    if (a < b) return a;
-    return remainder_recursive(a, b);
+    if a < *b {
+        return a;
+    }
+    remainder_recursive(a, b)
 }
 
 /* The next function is due to:
@@ -1448,252 +1495,357 @@ T remainder_nonnegative(T a, T b)
     Volume 19, Number 2, 1990, pages 329--340.
 */
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T remainder_nonnegative_fibonacci(T a, T b)
+pub fn remainder_nonnegative_fibonacci<T>(mut a: T, mut b: T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    if (a < b) return a;
-    T c = b;
-    do {
-        T tmp = c;
-        c = b + c;
+    if a < b {
+        return a;
+    }
+    let mut c = b.clone();
+    loop {
+        let tmp = c.clone();
+        c = b.add(&c);
         b = tmp;
-    } while (a >= c);
-    do {
-        if (a >= b) a = a - b;
-        T tmp = c - b;
+        if a < c {
+            break;
+        }
+    }
+    loop {
+        if a >= b {
+            a = a.sub(&b);
+        }
+        let tmp = c.sub(&b);
         c = b;
         b = tmp;
-    } while (b < c);
-    return a;
+        if b >= c {
+            break;
+        }
+    }
+    a
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T largest_doubling(T a, T b)
+pub fn largest_doubling<T>(a: &T, mut b: T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq b > 0$
-    while (b <= a - b) b = b + b;
-    return b;
+    while b <= a.sub(&b) {
+        b = b.add(&b)
+    }
+    b
 }
 
-template<typename T>
-    requires(HalvableMonoid(T))
-T remainder_nonnegative_iterative(T a, T b)
+pub trait HalvableMonoid: ArchimedeanMonoid {
+    fn half(&self) -> Self;
+}
+
+pub fn remainder_nonnegative_iterative<T>(mut a: T, b: &T) -> T
+where
+    T: HalvableMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    if (a < b) return a;
-    T c = largest_doubling(a, b);
-    a = a - c;
-    while (c != b) {
-        c = half(c);
-        if (c <= a) a = a - c;
+    if a < *b {
+        return a;
     }
-    return a;
+    let mut c = largest_doubling(&a, b.clone());
+    a = a.sub(&c);
+    while c != *b {
+        c = c.half();
+        if c <= a {
+            a = a.sub(&c);
+        }
+    }
+    a
 }
 
 // Jon Brandt suggested this algorithm (it is not mentioned in chapter 5):
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T remainder_nonnegative_with_largest_doubling(T a, T b)
+pub fn remainder_nonnegative_with_largest_doubling<T>(mut a: T, b: &T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq T(0) \wedge b > T(0)$
-    while (b <= a)
-        a = a - largest_doubling(a, b);
-    return a;
+    while *b <= a {
+        a = a.sub(&largest_doubling(&a, b.clone()));
+    }
+    a
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-T subtractive_gcd_nonzero(T a, T b)
+pub fn subtractive_gcd_nonzero<T>(mut a: T, mut b: T) -> T
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a > 0 \wedge b > 0$
-    while (true) {
-        if (b < a)      a = a - b;
-        else if (a < b) b = b - a;
-        else            return a;
+    loop {
+        match b.cmp(&a) {
+            std::cmp::Ordering::Less => a = a.sub(&b),
+            std::cmp::Ordering::Greater => b = b.sub(&a),
+            std::cmp::Ordering::Equal => return a,
+        }
     }
 }
 
-template<typename T>
-    requires(EuclideanMonoid(T))
-T subtractive_gcd(T a, T b)
+pub trait EuclideanMonoid: ArchimedeanMonoid {}
+
+pub fn subtractive_gcd<T>(mut a: T, mut b: T) -> T
+where
+    T: EuclideanMonoid,
 {
     // Precondition: $a \geq 0 \wedge b \geq 0 \wedge \neg(a = 0 \wedge b = 0)$
-    while (true) {
-        if (b == T(0)) return a;
-        while (b <= a) a = a - b;
-        if (a == T(0)) return b;
-        while (a <= b) b = b - a;
+    loop {
+        if b == T::zero() {
+            return a;
+        }
+        while b <= a {
+            a = a.sub(&b);
+        }
+        if a == T::zero() {
+            return b;
+        }
+        while a <= b {
+            b = b.sub(&a);
+        }
     }
 }
 
-template<typename T>
-    requires(EuclideanMonoid(T))
-T fast_subtractive_gcd(T a, T b)
+pub fn fast_subtractive_gcd<T>(mut a: T, mut b: T) -> T
+where
+    T: EuclideanMonoid,
 {
     // Precondition: $a \geq 0 \wedge b \geq 0 \wedge \neg(a = 0 \wedge b = 0)$
-    while (true) {
-        if (b == T(0)) return a;
-        a = remainder_nonnegative(a, b);
-        if (a == T(0)) return b;
-        b = remainder_nonnegative(b, a);
+    loop {
+        if b == T::zero() {
+            return a;
+        }
+        a = remainder_nonnegative(a, &b);
+        if a == T::zero() {
+            return b;
+        }
+        b = remainder_nonnegative(b, &a);
     }
 }
 
-template<typename T>
-    requires(EuclideanSemiring(T))
-T gcd(T a, T b)
+pub trait MultiplicativeMonoid: MultiplicativeSemigroup {}
+
+pub trait Semiring: AdditiveMonoid + MultiplicativeMonoid {}
+
+pub trait CommutativeSemiring: Semiring {}
+
+pub trait EuclideanSemiring: CommutativeSemiring {
+    fn remainder(&self, x: &Self) -> Self;
+}
+
+pub fn gcd<T>(mut a: T, mut b: T) -> T
+where
+    T: EuclideanSemiring,
 {
     // Precondition: $\neg(a = 0 \wedge b = 0)$
-    while (true) {
-        if (b == T(0)) return a;
-        a = remainder(a, b);
-        if (a == T(0)) return b;
-        b = remainder(b, a);
+    loop {
+        if b == T::zero() {
+            return a;
+        }
+        a = a.remainder(&b);
+        if a == T::zero() {
+            return b;
+        }
+        b = b.remainder(&a);
     }
 }
 
-template<typename T, typename S>
-    requires(EuclideanSemimodule(T, S))
-T gcd(T a, T b)
+pub trait Semimodule: AdditiveMonoid {}
+
+pub trait EuclideanSemimodule: Semimodule {
+    fn remainder(&self, x: &Self) -> Self;
+}
+
+pub fn gcd_1<T>(mut a: T, mut b: T) -> T
+where
+    T: EuclideanSemimodule,
 {
     // Precondition: $\neg(a = 0 \wedge b = 0)$
-    while (true) {
-        if (b == T(0)) return a;
-        a = remainder(a, b);
-        if (a == T(0)) return b;
-        b = remainder(b, a);
+    loop {
+        if b == T::zero() {
+            return a;
+        }
+        a = a.remainder(&b);
+        if a == T::zero() {
+            return b;
+        }
+        b = b.remainder(&a);
     }
 }
-
 
 // Exercise 5.3:
 
-template<typename T>
-    requires(Integer(T))
-T stein_gcd_nonnegative(T a, T b)
+pub fn stein_gcd_nonnegative<T>(mut a: T, mut b: T) -> T
+where
+    T: Integer,
 {
     // Precondition: $a \geq 0 \wedge b \geq 0 \wedge \neg(a = 0 \wedge b = 0)$
-    if (zero(a)) return b;
-    if (zero(b)) return a;
-    int d = 0;
-    while (even(a) && even(b)) {
+    if zero(&a) {
+        return b;
+    }
+    if zero(&b) {
+        return a;
+    }
+    let mut d = T::zero();
+    while even(a.clone()) && even(b.clone()) {
         a = half_nonnegative(a);
         b = half_nonnegative(b);
-        d = d + 1;
+        d = d + T::one();
     }
-    while (even(a)) a = half_nonnegative(a);
-    while (even(b)) b = half_nonnegative(b);
-    while (true)
-        if (a < b) {
-            b = b - a;
-            do { b = half_nonnegative(b); } while (even(b));
-        } else if (b < a) {
-            a = a - b;
-            do { a = half_nonnegative(a); } while (even(a));
-        } else return binary_scale_up_nonnegative(a, d);
+    while even(a.clone()) {
+        a = half_nonnegative(a);
+    }
+    while even(b.clone()) {
+        b = half_nonnegative(b);
+    }
+    loop {
+        match a.cmp(&b) {
+            std::cmp::Ordering::Less => {
+                b = b - a.clone();
+                loop {
+                    b = half_nonnegative(b);
+                    if odd(b.clone()) {
+                        break;
+                    }
+                }
+            }
+            std::cmp::Ordering::Greater => {
+                a = a - b.clone();
+                loop {
+                    a = half_nonnegative(a);
+                    if odd(a.clone()) {
+                        break;
+                    }
+                }
+            }
+            std::cmp::Ordering::Equal => {
+                return binary_scale_up_nonnegative(a, d);
+            }
+        }
+    }
 }
 
-template<typename T>
-    requires(ArchimedeanMonoid(T))
-pair<QuotientType(T), T>
-quotient_remainder_nonnegative(T a, T b)
+pub fn quotient_remainder_nonnegative<T>(mut a: T, b: &T) -> Pair<T::QuotientType, T>
+where
+    T: ArchimedeanMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    typedef QuotientType(T) N;
-    if (a < b) return pair<N, T>(N(0), a);
-    if (a - b < b) return pair<N, T>(N(1), a - b);
-    pair<N, T> q = quotient_remainder_nonnegative(a, b + b);
-    N m = twice(q.m0);
+    if a < *b {
+        return Pair::new(T::QuotientType::zero(), a);
+    }
+    if a.sub(b) < *b {
+        return Pair::new(T::QuotientType::one(), a.sub(&b));
+    }
+    let q = quotient_remainder_nonnegative(a, &b.add(&b));
+    let m = twice(q.m0);
     a = q.m1;
-    if (a < b) return pair<N, T>(m, a);
-    else       return pair<N, T>(successor(m), a - b);
+    if a < *b {
+        Pair::new(m, a)
+    } else {
+        Pair::new(successor(m), a.sub(&b))
+    }
 }
 
-template<typename T>
-    requires(HalvableMonoid(T))
-pair<QuotientType(T), T>
-quotient_remainder_nonnegative_iterative(T a, T b)
+pub fn quotient_remainder_nonnegative_iterative<T>(mut a: T, b: &T) -> Pair<T::QuotientType, T>
+where
+    T: HalvableMonoid,
 {
     // Precondition: $a \geq 0 \wedge b > 0$
-    typedef QuotientType(T) N;
-    if (a < b) return pair<N, T>(N(0), a);
-    T c = largest_doubling(a, b);
-    a = a - c;
-    N n(1);
-    while (c != b) {
+    if a < *b {
+        return Pair::new(T::QuotientType::zero(), a);
+    }
+    let mut c = largest_doubling(&a, b.clone());
+    a = a.sub(&c);
+    let mut n = T::QuotientType::one();
+    while c != *b {
         n = twice(n);
-        c = half(c);
-        if (c <= a) {
-            a = a - c;
+        c = c.half();
+        if c <= a {
+            a = a.sub(&c);
             n = successor(n);
         }
     }
-    return pair<N, T>(n, a);
+    Pair::new(n, a)
 }
 
-template<typename Op>
-    requires(BinaryOperation(Op) &&
-        ArchimedeanGroup(Domain(Op)))
-Domain(Op) remainder(Domain(Op) a, Domain(Op) b, Op rem)
+pub trait ArchimedeanGroup: ArchimedeanMonoid + AdditiveGroup {}
+
+pub fn remainder<Domain, Op>(a: &Domain, b: &Domain, rem: &Op) -> Domain
+where
+    Op: BinaryOperation<Domain>,
+    Domain: ArchimedeanGroup,
 {
     // Precondition: $b \neq 0$
-    typedef Domain(Op) T;
-    T r;
-    if (a < T(0))
-        if (b < T(0)) {
-            r = -rem(-a, -b);
+    let mut r;
+    if *a < Domain::zero() {
+        if *b < Domain::zero() {
+            r = rem.call(&a.neg(), &b.neg()).neg();
         } else {
-            r =  rem(-a,  b); if (r != T(0)) r = b - r;
+            r = rem.call(&a.neg(), &b);
+            if r != Domain::zero() {
+                r = b.sub(&r);
+            }
         }
-    else
-        if (b < T(0)) {
-            r =  rem(a, -b);  if (r != T(0)) r = b + r;
-        } else {
-            r =  rem(a,  b);
+    } else if *b < Domain::zero() {
+        r = rem.call(&a, &b.neg());
+        if r != Domain::zero() {
+            r = b.add(&r);
         }
-    return r;
+    } else {
+        r = rem.call(&a, &b);
+    }
+    r
 }
 
+/*
 template<typename F>
     requires(HomogeneousFunction(F) && Arity(F) == 2 &&
         ArchimedeanGroup(Domain(F)) &&
         Codomain(F) == pair<QuotientType(Domain(F)),
                             Domain(F)>)
-pair<QuotientType(Domain(F)), Domain(F)>
-quotient_remainder(Domain(F) a, Domain(F) b, F quo_rem)
+pair<QuotientType(Domain(F)), Domain(F)>*/
+pub fn quotient_remainder<Domain, F>(
+    a: &Domain,
+    b: &Domain,
+    quo_rem: &F,
+) -> Pair<Domain::QuotientType, Domain>
+where
+    F: Fn(&Domain, &Domain) -> Pair<Domain::QuotientType, Domain>,
+    Domain: ArchimedeanGroup,
+    Domain::QuotientType: AdditiveGroup,
 {
     // Precondition: $b \neq 0$
-    typedef Domain(F) T;
-    pair<QuotientType(T), T> q_r;
-    if (a < T(0)) {
-        if (b < T(0)) {
-            q_r = quo_rem(-a, -b); q_r.m1 = -q_r.m1;
+    let mut q_r;
+    if *a < Domain::zero() {
+        if *b < Domain::zero() {
+            q_r = quo_rem(&a.neg(), &b.neg());
+            q_r.m1 = q_r.m1.neg();
         } else {
-            q_r = quo_rem(-a,  b);
-            if (q_r.m1 != T(0)) {
-                q_r.m1 = b - q_r.m1; q_r.m0 = successor(q_r.m0);
+            q_r = quo_rem(&a.neg(), &b);
+            if q_r.m1 != Domain::zero() {
+                q_r.m1 = b.sub(&q_r.m1);
+                q_r.m0 = successor(q_r.m0);
             }
-            q_r.m0 = -q_r.m0;
+            q_r.m0 = q_r.m0.neg();
         }
+    } else if *b < Domain::zero() {
+        q_r = quo_rem(&a, &b.neg());
+        if q_r.m1 != AdditiveMonoid::zero() {
+            q_r.m1 = b.add(&q_r.m1);
+            q_r.m0 = successor(q_r.m0);
+        }
+        q_r.m0 = q_r.m0.neg();
     } else {
-        if (b < T(0)) {
-            q_r = quo_rem( a, -b);
-            if (q_r.m1 != T(0)) {
-                q_r.m1 = b + q_r.m1; q_r.m0 = successor(q_r.m0);
-            }
-            q_r.m0 = -q_r.m0;
-        }
-        else
-            q_r = quo_rem( a,  b);
+        q_r = quo_rem(a, b);
     }
-    return q_r;
+    q_r
 }
 
-
+/*
 //
 //  Chapter 6. Iterators
 //
