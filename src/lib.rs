@@ -31,8 +31,8 @@
 use num::{One, Zero};
 mod integers;
 use integers::{
-    binary_scale_up_nonnegative, even, half_nonnegative, odd, one, successor, twice, zero, Integer,
-    Regular,
+    binary_scale_up_nonnegative, even, half_nonnegative, odd, one, predecessor, successor, twice,
+    zero, Integer, Regular,
 };
 
 //
@@ -70,7 +70,7 @@ where
     }
 }
 
-pub fn square_with_op<Domain, Op>(x: &Domain, op: &Op) -> Domain
+pub fn square_1<Domain, Op>(x: &Domain, op: &Op) -> Domain
 where
     Op: BinaryOperation<Domain>,
 {
@@ -218,7 +218,7 @@ where
 {
     // Precondition: $y$ is reachable from $x$ under $f$
     let mut n = F::DistanceType::zero();
-    while &x != y {
+    while x != *y {
         x = f(x);
         n = n + F::DistanceType::one();
     }
@@ -664,7 +664,7 @@ where
     power_accumulate_positive(a, op_a_a, n, op)
 }
 
-pub fn power_with_identity<I, Op, Domain>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
+pub fn power_4<I, Op, Domain>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
 where
     I: Integer,
     Op: BinaryOperation<Domain>,
@@ -790,10 +790,10 @@ where
 
 impl<R> ComplementOfConverse<R>
 where
-    R: Relation,
+    R: Relation + Regular,
 {
-    fn _new(r: R) -> Self {
-        Self { r }
+    pub fn new(r: &R) -> Self {
+        Self { r: r.clone() }
     }
 }
 
@@ -1004,7 +1004,7 @@ where
     }
 }
 
-pub fn select_0_2_ex<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+pub fn select_0_2_1<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
 where
     R: Relation,
     IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
@@ -1016,7 +1016,7 @@ where
     a
 }
 
-pub fn select_1_2_ex<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
+pub fn select_1_2_1<'a, IA, IB, R>(a: &'a R::Domain, b: &'a R::Domain, r: &R) -> &'a R::Domain
 where
     R: Relation,
     IA: Cmp<IB> + IsLessPrivate<IB, Compare<IA, IB>>,
@@ -1028,7 +1028,7 @@ where
     b
 }
 
-pub fn select_1_4_ab_cd_ex<'a, IA, IB, IC, ID, R>(
+pub fn select_1_4_ab_cd_1<'a, IA, IB, IC, ID, R>(
     a: &'a R::Domain,
     b: &'a R::Domain,
     c: &'a R::Domain,
@@ -1044,12 +1044,12 @@ where
     <IB as IsLess<IC>>::Output: CompareStrictOrReflexive<R>,
 {
     if <op!(IA < IC)>::call(c, a, r) {
-        return select_0_2_ex::<IA, ID, R>(a, d, r);
+        return select_0_2_1::<IA, ID, R>(a, d, r);
     }
-    select_0_2_ex::<IB, IC, R>(b, c, r)
+    select_0_2_1::<IB, IC, R>(b, c, r)
 }
 
-pub fn select_1_4_ab_ex<'a, IA, IB, IC, ID, R>(
+pub fn select_1_4_ab_1<'a, IA, IB, IC, ID, R>(
     a: &'a R::Domain,
     b: &'a R::Domain,
     c: &'a R::Domain,
@@ -1070,12 +1070,12 @@ where
     <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
 {
     if <op!(IC < ID)>::call(d, c, r) {
-        return select_1_4_ab_cd_ex::<IA, IB, ID, IC, R>(a, b, d, c, r);
+        return select_1_4_ab_cd_1::<IA, IB, ID, IC, R>(a, b, d, c, r);
     }
-    select_1_4_ab_cd_ex::<IA, IB, IC, ID, R>(a, b, c, d, r)
+    select_1_4_ab_cd_1::<IA, IB, IC, ID, R>(a, b, c, d, r)
 }
 
-pub fn select_1_4_ex<'a, IA, IB, IC, ID, R>(
+pub fn select_1_4_1<'a, IA, IB, IC, ID, R>(
     a: &'a R::Domain,
     b: &'a R::Domain,
     c: &'a R::Domain,
@@ -1098,9 +1098,9 @@ where
     <IC as IsLess<ID>>::Output: CompareStrictOrReflexive<R>,
 {
     if <op!(IA < IB)>::call(b, a, r) {
-        return select_1_4_ab_ex::<IB, IA, IC, ID, R>(b, a, c, d, r);
+        return select_1_4_ab_1::<IB, IA, IC, ID, R>(b, a, c, d, r);
     }
-    select_1_4_ab_ex::<IA, IB, IC, ID, R>(a, b, c, d, r)
+    select_1_4_ab_1::<IA, IB, IC, ID, R>(a, b, c, d, r)
 }
 
 pub fn select_2_5_ab_cd<'a, IA, IB, IC, ID, IE, R>(
@@ -1133,9 +1133,9 @@ where
     <ID as IsLess<IE>>::Output: CompareStrictOrReflexive<R>,
 {
     if <op!(IA < IC)>::call(c, a, r) {
-        return select_1_4_ab_ex::<IA, IB, ID, IE, R>(a, b, d, e, r);
+        return select_1_4_ab_1::<IA, IB, ID, IE, R>(a, b, d, e, r);
     }
-    select_1_4_ab_ex::<IC, ID, IB, IE, R>(c, d, b, e, r)
+    select_1_4_ab_1::<IC, ID, IB, IE, R>(c, d, b, e, r)
 }
 
 pub fn select_2_5_ab<'a, IA, IB, IC, ID, IE, R>(
@@ -1324,13 +1324,14 @@ pub trait AdditiveSemigroup: Regular {
     fn add(&self, x: &Self) -> Self;
 }
 
+#[derive(Default)]
 pub struct Plus<T>(std::marker::PhantomData<T>);
 
-impl<T> Plus<T>
+impl<T> BinaryOperation<T> for Plus<T>
 where
     T: AdditiveSemigroup,
 {
-    fn _call(x: &T, y: &T) -> T {
+    fn call(&self, x: &T, y: &T) -> T {
         x.add(y)
     }
 }
@@ -1346,13 +1347,14 @@ pub trait MultiplicativeSemigroup {
     fn mul(&self, y: &Self) -> Self;
 }
 
+#[derive(Default)]
 pub struct Multiplies<T>(std::marker::PhantomData<T>);
 
-impl<T> Multiplies<T>
+impl<T> BinaryOperation<T> for Multiplies<T>
 where
     T: MultiplicativeSemigroup,
 {
-    fn _call(x: &T, y: &T) -> T {
+    fn call(&self, x: &T, y: &T) -> T {
         x.mul(y)
     }
 }
@@ -1801,13 +1803,6 @@ where
     r
 }
 
-/*
-template<typename F>
-    requires(HomogeneousFunction(F) && Arity(F) == 2 &&
-        ArchimedeanGroup(Domain(F)) &&
-        Codomain(F) == pair<QuotientType(Domain(F)),
-                            Domain(F)>)
-pair<QuotientType(Domain(F)), Domain(F)>*/
 pub fn quotient_remainder<Domain, F>(
     a: &Domain,
     b: &Domain,
@@ -1845,517 +1840,588 @@ where
     q_r
 }
 
-/*
 //
 //  Chapter 6. Iterators
 //
 
+pub trait Iterator: Regular {
+    type DistanceType: Integer;
+    fn successor(&self) -> Self;
+    fn add(mut self, mut n: Self::DistanceType) -> Self
+    where
+        Self: Sized,
+    {
+        // Precondition: $n \geq 0 \wedge \property{weak\_range}(f, n)$
+        while !zero(&n) {
+            n = predecessor(n);
+            self = self.successor();
+        }
+        self
+    }
+    fn sub(mut self, f: &Self) -> Self::DistanceType {
+        // Precondition: $\property{bounded\_range}(f, l)$
+        let mut n = Self::DistanceType::zero();
+        while self != *f {
+            n = successor(n);
+            self = self.successor();
+        }
+        n
+    }
+}
 
-template<typename I>
-    requires(Iterator(I))
-void increment(I& x)
+pub fn increment<I>(x: &mut I)
+where
+    I: Iterator,
 {
     // Precondition: $\func{successor}(x)$ is defined
-    x = successor(x);
+    *x = x.successor();
 }
 
+pub trait Readable {
+    type ValueType: Regular;
+    fn source(&self) -> &Self::ValueType;
+}
 
-template<typename I>
-    requires(Iterator(I))
-I operator+(I f, DistanceType(I) n)
+pub fn for_each<I, Proc>(mut f: I, l: &I, mut proc: Proc) -> Proc
+where
+    I: Readable + Iterator,
+    Proc: FnMut(&I::ValueType),
 {
-    // Precondition: $n \geq 0 \wedge \property{weak\_range}(f, n)$
-    while (!zero(n)) {
-        n = predecessor(n);
-        f = successor(f);
+    // Precondition: $\func{readable\_bounded\_range}(f, l)$
+    while f != *l {
+        proc(f.source());
+        f = f.successor();
     }
-    return f;
+    proc
 }
 
-
-template<typename I>
-    requires(Iterator(I))
-DistanceType(I) operator-(I l, I f)
+pub fn find<I>(mut f: I, l: &I, x: &I::ValueType) -> I
+where
+    I: Readable + Iterator,
 {
-    // Precondition: $\property{bounded\_range}(f, l)$
-    DistanceType(I) n(0);
-    while (f != l) {
-        n = successor(n);
-        f = successor(f);
+    // Precondition: $\func{readable\_bounded\_range}(f, l)$
+    while f != *l && f.source() != x {
+        f = f.successor();
     }
-    return n;
+    f
 }
 
-template<typename I, typename Proc>
-    requires(Readable(I) && Iterator(I) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        ValueType(I) == InputType(Proc, 0))
-Proc for_each(I f, I l, Proc proc)
+pub fn find_not<I>(mut f: I, l: &I, x: &I::ValueType) -> I
+where
+    I: Readable + Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        proc(source(f));
-        f = successor(f);
+    while f != *l && f.source() == x {
+        f = f.successor();
     }
-    return proc;
+    f
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-I find(I f, I l, const ValueType(I)& x)
+pub fn find_if<I, P>(mut f: I, l: &I, p: &P) -> I
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l && source(f) != x) f = successor(f);
-    return f;
+    while f != *l && !p(f.source()) {
+        f = f.successor();
+    }
+    f
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-I find_not(I f, I l, const ValueType(I)& x)
+pub fn find_if_not<I, P>(mut f: I, l: &I, p: &P) -> I
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l && source(f) == x) f = successor(f);
-    return f;
-}
-
-template<typename I, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_if(I f, I l, P p)
-{
-    // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l && !p(source(f))) f = successor(f);
-    return f;
-}
-
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_if_not(I f, I l, P p)
-{
-    // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l && p(source(f)))
-        f = successor(f);
-    return f;
+    while f != *l && p(f.source()) {
+        f = f.successor();
+    }
+    f
 }
 
 // Exercise 6.1: quantifier functions
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool all(I f, I l, P p)
+pub fn all<I, P>(f: I, l: &I, p: &P) -> bool
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return l == find_if_not(f, l, p);
+    *l == find_if_not(f, l, p)
 }
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool none(I f, I l, P p)
+pub fn none<I, P>(f: I, l: &I, p: &P) -> bool
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return l == find_if(f, l, p);
+    *l == find_if(f, l, p)
 }
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool not_all(I f, I l, P p)
+pub fn not_all<I, P>(f: I, l: &I, p: &P) -> bool
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return !all(f, l, p);
+    !all(f, l, p)
 }
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool some(I f, I l, P p)
+pub fn some<I, P>(f: I, l: &I, p: &P) -> bool
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return !none(f, l, p);
+    !none(f, l, p)
 }
 
-template<typename I, typename P, typename J>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && Iterator(J) &&
-        ValueType(I) == Domain(P))
-J count_if(I f, I l, P p, J j)
+pub fn count_if<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
+    J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (p(source(f))) j = successor(j);
-        f = successor(f);
+    while f != *l {
+        if p(f.source()) {
+            j = j.successor();
+        }
+        f = f.successor();
     }
-    return j;
+    j
 }
-
 
 // Exercise 6.2: implement count_if using for_each
 
-
-template<typename I, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-DistanceType(I) count_if(I f, I l, P p) {
-    // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return count_if(f, l, p, DistanceType(I)(0));
-}
-
-template<typename I, typename J>
-    requires(Readable(I) && Iterator(I) &&
-        Iterator(J))
-J count(I f, I l, const ValueType(I)& x, J j)
+pub fn count_if_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
+    I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (source(f) == x) j = successor(j);
-        f = successor(f);
+    count_if(f, l, p, I::DistanceType::zero())
+}
+
+pub fn count<I, J>(mut f: I, l: &I, x: &I::ValueType, mut j: J) -> J
+where
+    I: Readable + Iterator,
+    J: Iterator,
+{
+    // Precondition: $\func{readable\_bounded\_range}(f, l)$
+    while f != *l {
+        if f.source() == x {
+            j = j.successor();
+        }
+        f = f.successor();
     }
-    return j;
+    j
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-DistanceType(I) count(I f, I l, const ValueType(I)& x)
+pub fn count_1<I>(f: I, l: &I, x: &I::ValueType) -> I::DistanceType
+where
+    I: Readable + Iterator,
+    I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-  return count(f, l, x, DistanceType(I)(0));
+    count(f, l, x, I::DistanceType::zero())
 }
 
-template<typename I, typename J>
-    requires(Readable(I) && Iterator(I) &&
-        Iterator(J))
-J count_not(I f, I l, const ValueType(I)& x, J j)
+pub fn count_not<I, J>(mut f: I, l: &I, x: &I::ValueType, mut j: J) -> J
+where
+    I: Readable + Iterator,
+    J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (source(f) != x) j = successor(j);
-        f = successor(f);
+    while f != *l {
+        if f.source() != x {
+            j = j.successor();
+        }
+        f = f.successor();
     }
-    return j;
+    j
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-DistanceType(I) count_not(I f, I l, const ValueType(I)& x)
+pub fn count_not_1<I>(f: I, l: &I, x: &I::ValueType) -> I::DistanceType
+where
+    I: Readable + Iterator,
+    I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-  return count_not(f, l, x, DistanceType(I)(0));
+    count_not(f, l, x, I::DistanceType::zero())
 }
 
-template<typename I, typename P, typename J>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && Domain(P) == ValueType(I) &&
-        Iterator(J))
-J count_if_not(I f, I l, P p, J j)
+pub fn count_if_not<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
+    J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (!p(source(f))) j = successor(j);
-        f = successor(f);
+    while f != *l {
+        if !p(f.source()) {
+            j = j.successor();
+        }
+        f = f.successor();
     }
-    return j;
-}
-template<typename I, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && Domain(P) == ValueType(I))
-DistanceType(I) count_if_not(I f, I l, P p)
-{
-    // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return count_if_not(f, l, p, DistanceType(I)(0));
+    j
 }
 
-template<typename I, typename Op, typename F>
-    requires(Iterator(I) && BinaryOperation(Op) &&
-        UnaryFunction(F) &&
-        I == Domain(F) && Codomain(F) == Domain(Op))
-Domain(Op) reduce_nonempty(I f, I l, Op op, F fun)
+pub fn count_if_not_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
+where
+    I: Readable + Iterator,
+    P: Fn(&I::ValueType) -> bool,
+    I::DistanceType: Iterator,
+{
+    // Precondition: $\func{readable\_bounded\_range}(f, l)$
+    count_if_not(f, l, p, I::DistanceType::zero())
+}
+
+pub fn reduce_nonempty<I, Op, F, Domain>(mut f: I, l: &I, op: &Op, fun: &F) -> Domain
+where
+    I: Iterator,
+    Op: BinaryOperation<Domain>,
+    F: Fn(&I) -> &Domain,
+    Domain: Regular,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge f \neq l$
     // Precondition: $\property{partially\_associative}(op)$
     // Precondition: $(\forall x \in [f, l))\,fun(x)$ is defined
-    Domain(Op) r = fun(f);
-    f = successor(f);
-    while (f != l) {
-        r = op(r, fun(f));
-        f = successor(f);
+    let mut r = fun(&f).clone();
+    f = f.successor();
+    while f != *l {
+        r = op.call(&r, fun(&f));
+        f = f.successor();
     }
-    return r;
+    r
 }
 
-template<typename I, typename Op>
-    requires(Readable(I) && Iterator(I) && BinaryOperation(Op) &&
-        ValueType(I) == Domain(Op))
-Domain(Op) reduce_nonempty(I f, I l, Op op)
+pub fn reduce_nonempty_1<I, Op, Domain>(mut f: I, l: &I, op: &Op) -> Domain
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l) \wedge f \neq l$
     // Precondition: $\property{partially\_associative}(op)$
-    Domain(Op) r = source(f);
-    f = successor(f);
-    while (f != l) {
-        r = op(r, source(f));
-        f = successor(f);
+    let mut r = f.source().clone();
+    f = f.successor();
+    while f != *l {
+        r = op.call(&r, f.source());
+        f = f.successor();
     }
-    return r;
+    r
 }
 
-template<typename I, typename Op, typename F>
-    requires(Iterator(I) && BinaryOperation(Op) &&
-        UnaryFunction(F) &&
-        I == Domain(F) && Codomain(F) == Domain(Op))
-Domain(Op) reduce(I f, I l, Op op, F fun, const Domain(Op)& z)
+pub fn reduce<I, Op, F, Domain>(f: I, l: &I, op: &Op, fun: &F, z: &Domain) -> Domain
+where
+    I: Iterator,
+    Op: BinaryOperation<Domain>,
+    F: Fn(&I) -> &Domain,
+    Domain: Regular,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
     // Precondition: $(\forall x \in [f, l))\,fun(x)$ is defined
-    if (f == l) return z;
-    return reduce_nonempty(f, l, op, fun);
+    if f == *l {
+        return z.clone();
+    }
+    reduce_nonempty(f, l, op, fun)
 }
 
-template<typename I, typename Op>
-    requires(ReadableIterator(I) && BinaryOperation(Op) &&
-        ValueType(I) == Domain(Op))
-Domain(Op) reduce(I f, I l, Op op, const Domain(Op)& z)
+pub fn reduce_1<I, Op, Domain>(f: I, l: &I, op: &Op, z: &Domain) -> Domain
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
-    if (f == l) return z;
-    return reduce_nonempty(f, l, op);
+    if f == *l {
+        return z.clone();
+    }
+    reduce_nonempty_1(f, l, op)
 }
 
-template<typename I, typename Op, typename F>
-    requires(Iterator(I) && BinaryOperation(Op) &&
-        UnaryFunction(F) &&
-        I == Domain(F) && Codomain(F) == Domain(Op))
-Domain(Op) reduce_nonzeroes(I f, I l,
-                            Op op, F fun, const Domain(Op)& z)
+pub fn reduce_nonzeroes<I, Op, F, Domain>(mut f: I, l: &I, op: &Op, fun: &F, z: &Domain) -> Domain
+where
+    I: Iterator,
+    Op: BinaryOperation<Domain>,
+    F: Fn(&I) -> &Domain,
+    Domain: Regular,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
     // Precondition: $(\forall x \in [f, l))\,fun(x)$ is defined
-    Domain(Op) x;
-    do {
-        if (f == l) return z;
-        x = fun(f);
-        f = successor(f);
-    } while (x == z);
-    while (f != l) {
-        Domain(Op) y = fun(f);
-        if (y != z) x = op(x, y);
-        f = successor(f);
+    let mut x;
+    loop {
+        if f == *l {
+            return z.clone();
+        }
+        x = fun(&f).clone();
+        f = f.successor();
+        if x != *z {
+            break;
+        }
     }
-    return x;
+    while f != *l {
+        let y = fun(&f).clone();
+        if y != *z {
+            x = op.call(&x, &y);
+        }
+        f = f.successor();
+    }
+    x
 }
 
-template<typename I, typename Op>
-    requires(ReadableIterator(I) && BinaryOperation(Op) &&
-        ValueType(I) == Domain(Op))
-Domain(Op) reduce_nonzeroes(I f, I l,
-                            Op op, const Domain(Op)& z)
+pub fn reduce_nonzeroes_1<I, Op, Domain>(mut f: I, l: &I, op: &Op, z: &Domain) -> Domain
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    Op: BinaryOperation<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
-    Domain(Op) x;
-    do {
-        if (f == l) return z;
-        x = source(f);
-        f = successor(f);
-    } while (x == z);
-    while (f != l) {
-        Domain(Op) y = source(f);
-        if (y != z) x = op(x, y);
-        f = successor(f);
+    let mut x;
+    loop {
+        if f == *l {
+            return z.clone();
+        }
+        x = f.source().clone();
+        f = f.successor();
+        if x != *z {
+            break;
+        }
     }
-    return x;
+    while f != *l {
+        let y = f.source().clone();
+        if y != *z {
+            x = op.call(&x, &y);
+        }
+        f = f.successor();
+    }
+    x
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I) &&
-        AdditiveMonoid(ValueType(I)))
-ValueType(I) reduce(I f, I l)
+pub fn reduce_2<I>(f: I, l: &I) -> I::ValueType
+where
+    I: Readable + Iterator,
+    I::ValueType: AdditiveMonoid,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
-    typedef ValueType(I) T;
-    return reduce(f, l, plus<T>(), T(0));
+    reduce_1(
+        f,
+        l,
+        &Plus::<I::ValueType>::default(),
+        &I::ValueType::zero(),
+    )
 }
 
-template<typename I, typename Proc>
-    requires(Readable(I) && Iterator(I) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        ValueType(I) == InputType(Proc, 0))
-pair<Proc, I> for_each_n(I f, DistanceType(I) n, Proc proc)
+pub fn for_each_n<I, Proc>(mut f: I, mut n: I::DistanceType, mut proc: Proc) -> Pair<Proc, I>
+where
+    I: Readable + Iterator,
+    Proc: FnMut(&I::ValueType) + Regular,
 {
     // Precondition: $\property{readable\_weak\_range}(f, n)$
-    while (!zero(n)) {
+    while !zero(&n) {
         n = predecessor(n);
-        proc(source(f));
-        f = successor(f);
+        proc(f.source());
+        f = f.successor();
     }
-    return pair<Proc, I>(proc, f);
+    Pair::new(proc, f)
 }
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-pair<I, DistanceType(I)> find_n(I f, DistanceType(I) n,
-                                const ValueType(I)& x)
+pub fn find_n<I>(mut f: I, mut n: I::DistanceType, x: &I::ValueType) -> Pair<I, I::DistanceType>
+where
+    I: Readable + Iterator,
 {
     // Precondition: $\property{readable\_weak\_range}(f, n)$
-    while (!zero(n) && source(f) != x) {
+    while !zero(&n) && f.source() != x {
         n = predecessor(n);
-        f = successor(f);
+        f = f.successor();
     }
-    return pair<I, DistanceType(I)>(f, n);
+    Pair::new(f, n)
 }
-
 
 // Exercise 6.3: implement variations taking a weak range instead of a bounded range
 // of all the versions of find, quantifiers, count, and reduce
 
-
-template<typename I, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_if_unguarded(I f, P p) {
+pub fn find_if_unguarded<I, P, Domain>(mut f: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
+{
     // Precondition:
     // $(\exists l)\,\func{readable\_bounded\_range}(f, l) \wedge \func{some}(f, l, p)$
-    while (!p(source(f))) f = successor(f);
-    return f;
+    while !p(f.source()) {
+        f = f.successor();
+    }
+    f
     // Postcondition: $p(\func{source}(f))$
 }
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && Domain(P) == ValueType(I))
-I find_if_not_unguarded(I f, P p) {
+pub fn find_if_not_unguarded<I, P, Domain>(mut f: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
+{
     // Let $l$ be the end of the implied range starting with $f$
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{not\_all}(f, l, p)$
-    while (p(source(f))) f = successor(f);
-    return f;
+    while p(f.source()) {
+        f = f.successor();
+    }
+    f
 }
 
-template<typename I0, typename I1, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) && Relation(R) &&
-        ValueType(I0) == ValueType(I1) &&
-        ValueType(I0) == Domain(R))
-pair<I0, I1> find_mismatch(I0 f0, I0 l0, I1 f1, I1 l1, R r)
+pub fn find_mismatch<I0, I1, R, Domain>(
+    mut f0: I0,
+    l0: &I0,
+    mut f1: I1,
+    l1: &I1,
+    r: &R,
+) -> Pair<I0, I1>
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\func{readable\_bounded\_range}(f1, l1)$
-    while (f0 != l0 && f1 != l1 && r(source(f0), source(f1))) {
-        f0 = successor(f0);
-        f1 = successor(f1);
+    while f0 != *l0 && f1 != *l1 && r.call(f0.source(), f1.source()) {
+        f0 = f0.successor();
+        f1 = f1.successor();
     }
-    return pair<I0, I1>(f0, f1);
+    Pair::new(f0, f1)
 }
 
-template<typename I, typename R>
-    requires(Readable(I) && Iterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I find_adjacent_mismatch(I f, I l, R r)
+pub fn find_adjacent_mismatch<I, R, Domain>(mut f: I, l: &I, r: &R) -> I
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    if (f == l) return l;
-    ValueType(I) x = source(f);
-    f = successor(f);
-    while (f != l && r(x, source(f))) {
-        x = source(f);
-        f = successor(f);
+    if f == *l {
+        return f;
     }
-    return f;
+    let mut x = f.source().clone();
+    f = f.successor();
+    while f != *l && r.call(&x, f.source()) {
+        x = f.source().clone();
+        f = f.successor();
+    }
+    f
 }
 
-template<typename I, typename R>
-    requires(Readable(I) && Iterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-bool relation_preserving(I f, I l, R r)
+pub fn relation_preserving<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return l == find_adjacent_mismatch(f, l, r);
+    *l == find_adjacent_mismatch(f, l, r)
 }
 
-template<typename I, typename R>
-    requires(Readable(I) && Iterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-bool strictly_increasing_range(I f, I l, R r)
+pub fn strictly_increasing_range<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{weak\_ordering}(r)$
-    return relation_preserving(f, l, r);
+    relation_preserving(f, l, r)
 }
 
-template<typename I, typename R>
-    requires(Readable(I) && Iterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-bool increasing_range(I f, I l, R r)
+pub fn increasing_range<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain> + Regular,
+    Domain: Regular,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{weak\_ordering}(r)$
-    return relation_preserving(
-        f, l,
-        complement_of_converse<R>(r));
+    relation_preserving(f, l, &ComplementOfConverse::new(r))
 }
 
-template<typename I, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool partitioned(I f, I l, P p)
+pub fn partitioned<I, P, Domain>(f: I, l: &I, p: &P) -> bool
+where
+    I: Readable<ValueType = Domain> + Iterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    return l == find_if_not(find_if(f, l, p), l, p);
+    *l == find_if_not(find_if(f, l, p), l, p)
 }
-
 
 // Exercise 6.6: partitioned_n
 
+pub trait ForwardIterator: Iterator {}
+impl<T> ForwardIterator for T where T: Iterator {}
 
-template<typename I, typename R>
-    requires(Readable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I find_adjacent_mismatch_forward(I f, I l, R r)
+pub fn find_adjacent_mismatch_forward<I, R, Domain>(mut f: I, l: &I, r: &R) -> I
+where
+    I: Readable<ValueType = Domain> + ForwardIterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    if (f == l) return l;
-    I t;
-    do {
-        t = f;
-        f = successor(f);
-    } while (f != l && r(source(t), source(f)));
-    return f;
+    if f == *l {
+        return f;
+    }
+    loop {
+        let t = f.clone();
+        f = f.successor();
+        if f == *l || !r.call(t.source(), f.source()) {
+            break;
+        }
+    }
+    f
 }
 
-template<typename I, typename P>
-    requires(Readable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_point_n(I f, DistanceType(I) n, P p)
+pub fn partition_point_n<I, P, Domain>(mut f: I, mut n: I::DistanceType, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + ForwardIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition:
     // $\func{readable\_counted\_range}(f, n) \wedge \func{partitioned\_n}(f, n, p)$
-    while (!zero(n)) {
-        DistanceType(I) h = half_nonnegative(n);
-        I m = f + h;
-        if (p(source(m))) {
+    while !zero(&n) {
+        let h = half_nonnegative(n.clone());
+        let m = f.clone().add(h.clone());
+        if p(m.source()) {
             n = h;
         } else {
-            n = n - successor(h); f = successor(m);
+            n = n - successor(h);
+            f = m.successor();
         }
     }
-    return f;
+    f
 }
 
-template<typename I,  typename P>
-    requires(Readable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_point(I f, I l, P p)
+pub fn partition_point<I, P, Domain>(f: I, l: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + ForwardIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{partitioned}(f, l, p)$
-    return partition_point_n(f, l - f, p);
+    let n = l.sub(&f);
+    partition_point_n(f, n, p)
 }
 
+/*
 template<typename R>
     requires(Relation(R))
 struct lower_bound_predicate

@@ -47,7 +47,7 @@ where
     a + I::one()
 }
 
-pub fn _predecessor<I>(a: I) -> I
+pub fn predecessor<I>(a: I) -> I
 where
     I: Integer,
 {
