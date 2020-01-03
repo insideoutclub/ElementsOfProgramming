@@ -194,7 +194,7 @@ pub fn euclidean_norm_3(x: f64, y: f64, z: f64) -> f64 {
 } // ternary operation
 
 pub trait Transformation<Domain>: Fn(Domain) -> Domain {
-    type DistanceType: integers::Integer;
+    type DistanceType: Integer;
 }
 
 pub fn power_unary<Domain, F, N>(mut x: Domain, mut n: N, f: &F) -> Domain
@@ -225,8 +225,9 @@ where
     n
 }
 
-pub trait UnaryPredicate<Domain>: Fn(&Domain) -> bool {}
-impl<Domain, T> UnaryPredicate<Domain> for T where T: Fn(&Domain) -> bool {}
+pub trait UnaryPredicate<Domain> {
+    fn call(&self, x: &Domain) -> bool;
+}
 
 pub fn collision_point<Domain, F, P>(x: Domain, f: &F, p: &P) -> Domain
 where
@@ -235,7 +236,7 @@ where
     P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    if !p(&x) {
+    if !p.call(&x) {
         return x;
     }
     let mut slow = x.clone(); // $slow = f^0(x)$
@@ -244,11 +245,11 @@ where
     while fast != slow {
         // $slow = f^n(x) \wedge fast = f^{2 n + 1}(x)$
         slow = f(slow); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 1}(x)$
-        if !p(&fast) {
+        if !p.call(&fast) {
             return fast;
         }
         fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 2}(x)$
-        if !p(&fast) {
+        if !p.call(&fast) {
             return fast;
         }
         fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 3}(x)$
@@ -265,7 +266,7 @@ where
     P: UnaryPredicate<Domain>,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
-    !p(&collision_point(x, f, p))
+    !p.call(&collision_point(x, f, p))
 }
 
 pub fn collision_point_nonterminating_orbit<Domain, F>(x: Domain, f: &F) -> Domain
@@ -303,7 +304,7 @@ where
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
-    p(&y) && x == &f(y)
+    p.call(&y) && x == &f(y)
 }
 
 pub fn convergent_point<Domain, F>(mut x0: Domain, mut x1: Domain, f: &F) -> Domain
@@ -335,7 +336,7 @@ where
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
-    if !p(&y) {
+    if !p.call(&y) {
         return y;
     }
     convergent_point(x, f(y), f)
@@ -390,7 +391,7 @@ where
     let y = connection_point(x.clone(), f, p);
     let m = distance(x, &y, f);
     let mut n = F::DistanceType::zero();
-    if p(&y) {
+    if p.call(&y) {
         n = distance(f(y.clone()), &y, f);
     }
     // Terminating: $m = h - 1 \wedge n = 0$
@@ -790,10 +791,10 @@ where
 
 impl<R> ComplementOfConverse<R>
 where
-    R: Relation + Regular,
+    R: Relation,
 {
-    pub fn new(r: &R) -> Self {
-        Self { r: r.clone() }
+    pub fn new(r: R) -> Self {
+        Self { r }
     }
 }
 
@@ -1920,10 +1921,10 @@ where
 pub fn find_if<I, P>(mut f: I, l: &I, p: &P) -> I
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while f != *l && !p(f.source()) {
+    while f != *l && !p.call(f.source()) {
         f = f.successor();
     }
     f
@@ -1932,10 +1933,10 @@ where
 pub fn find_if_not<I, P>(mut f: I, l: &I, p: &P) -> I
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
-    while f != *l && p(f.source()) {
+    while f != *l && p.call(f.source()) {
         f = f.successor();
     }
     f
@@ -1946,7 +1947,7 @@ where
 pub fn all<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if_not(f, l, p)
@@ -1955,7 +1956,7 @@ where
 pub fn none<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if(f, l, p)
@@ -1964,7 +1965,7 @@ where
 pub fn not_all<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     !all(f, l, p)
@@ -1973,7 +1974,7 @@ where
 pub fn some<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     !none(f, l, p)
@@ -1982,12 +1983,12 @@ where
 pub fn count_if<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
     J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     while f != *l {
-        if p(f.source()) {
+        if p.call(f.source()) {
             j = j.successor();
         }
         f = f.successor();
@@ -2000,7 +2001,7 @@ where
 pub fn count_if_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
     I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2058,12 +2059,12 @@ where
 pub fn count_if_not<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
     J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     while f != *l {
-        if !p(f.source()) {
+        if !p.call(f.source()) {
             j = j.successor();
         }
         f = f.successor();
@@ -2074,7 +2075,7 @@ where
 pub fn count_if_not_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
 where
     I: Readable + Iterator,
-    P: Fn(&I::ValueType) -> bool,
+    P: UnaryPredicate<I::ValueType>,
     I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2258,7 +2259,7 @@ where
 {
     // Precondition:
     // $(\exists l)\,\func{readable\_bounded\_range}(f, l) \wedge \func{some}(f, l, p)$
-    while !p(f.source()) {
+    while !p.call(f.source()) {
         f = f.successor();
     }
     f
@@ -2274,7 +2275,7 @@ where
     // Let $l$ be the end of the implied range starting with $f$
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{not\_all}(f, l, p)$
-    while p(f.source()) {
+    while p.call(f.source()) {
         f = f.successor();
     }
     f
@@ -2350,7 +2351,7 @@ where
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{weak\_ordering}(r)$
-    relation_preserving(f, l, &ComplementOfConverse::new(r))
+    relation_preserving(f, l, &ComplementOfConverse::new(r.clone()))
 }
 
 pub fn partitioned<I, P, Domain>(f: I, l: &I, p: &P) -> bool
@@ -2399,7 +2400,7 @@ where
     while !zero(&n) {
         let h = half_nonnegative(n.clone());
         let m = f.clone().add(h.clone());
-        if p(m.source()) {
+        if p.call(m.source()) {
             n = h;
         } else {
             n = n - successor(h);
@@ -2421,122 +2422,167 @@ where
     partition_point_n(f, n, p)
 }
 
-/*
-template<typename R>
-    requires(Relation(R))
-struct lower_bound_predicate
+pub struct LowerBoundPredicate<'a, R>
+where
+    R: Relation,
 {
-    typedef Domain(R) T;
-    const T& a;
-    R r;
-    lower_bound_predicate(const T& a, R r) : a(a), r(r) { }
-    bool operator()(const T& x) { return !r(x, a); }
-};
+    a: &'a R::Domain,
+    r: R,
+}
 
-template<typename I, typename R>
-    requires(Readable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I lower_bound_n(I f, DistanceType(I) n,
-                const ValueType(I)& a, R r)
+impl<'a, R> LowerBoundPredicate<'a, R>
+where
+    R: Relation,
+{
+    pub fn new(a: &'a R::Domain, r: R) -> Self {
+        Self { a, r }
+    }
+}
+
+impl<'a, R> UnaryPredicate<R::Domain> for LowerBoundPredicate<'a, R>
+where
+    R: Relation,
+{
+    fn call(&self, x: &R::Domain) -> bool {
+        !self.r.call(x, self.a)
+    }
+}
+
+pub fn lower_bound_n<I, R, Domain>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
+where
+    I: Readable<ValueType = Domain> + ForwardIterator,
+    R: Relation<Domain = Domain> + Regular,
+    Domain: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
-    lower_bound_predicate<R> p(a, r);
-    return partition_point_n(f, n, p);
+    let p = LowerBoundPredicate::new(a, r.clone());
+    partition_point_n(f, n, &p)
 }
 
-template<typename R>
-    requires(Relation(R))
-struct upper_bound_predicate
+pub struct UpperBoundPredicate<'a, R>
+where
+    R: Relation,
 {
-    typedef Domain(R) T;
-    const T& a;
-    R r;
-    upper_bound_predicate(const T& a, R r) : a(a), r(r) { }
-    bool operator()(const T& x) { return r(a, x); }
-};
+    a: &'a R::Domain,
+    r: R,
+}
 
-template<typename I, typename R>
-    requires(Readable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I upper_bound_n(I f, DistanceType(I) n,
-                const ValueType(I)& a, R r)
+impl<'a, R> UpperBoundPredicate<'a, R>
+where
+    R: Relation,
+{
+    pub fn new(a: &'a R::Domain, r: R) -> Self {
+        Self { a, r }
+    }
+}
+
+impl<'a, R> UnaryPredicate<R::Domain> for UpperBoundPredicate<'a, R>
+where
+    R: Relation,
+{
+    fn call(&self, x: &R::Domain) -> bool {
+        self.r.call(self.a, x)
+    }
+}
+
+pub fn upper_bound_n<I, R, Domain>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
+where
+    I: Readable<ValueType = Domain> + ForwardIterator,
+    R: Relation<Domain = Domain> + Regular,
+    Domain: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
-    upper_bound_predicate<R> p(a, r);
-    return partition_point_n(f, n, p);
+    let p = UpperBoundPredicate::new(a, r.clone());
+    partition_point_n(f, n, &p)
 }
-
 
 // Exercise 6.7: equal_range
 
+pub trait BidirectionalIterator: ForwardIterator {
+    fn predecessor(&self) -> Self;
+}
 
-template<typename I>
-    requires(BidirectionalIterator(I))
-I operator-(I l, DistanceType(I) n)
+pub fn sub<I>(mut l: I, mut n: I::DistanceType) -> I
+where
+    I: BidirectionalIterator,
 {
     // Precondition: $n \geq 0 \wedge (\exists f \in I)\,(\func{weak\_range}(f, n) \wedge l = f+n)$
-    while (!zero(n)) {
+    while !zero(&n) {
         n = predecessor(n);
-        l = predecessor(l);
+        l = l.predecessor();
     }
-    return l;
+    l
 }
 
-template<typename I, typename P>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_backward_if(I f, I l, P p)
+pub fn find_backward_if<I, P, Domain>(f: &I, mut l: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + BidirectionalIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
-    while (l != f && !p(source(predecessor(l))))
-        l = predecessor(l);
-    return l;
+    while l != *f && !p.call(l.predecessor().source()) {
+        l = l.predecessor();
+    }
+    l
 }
 
-template<typename I, typename P>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_backward_if_not(I f, I l, P p) {
+pub fn find_backward_if_not<I, P, Domain>(f: &I, mut l: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + BidirectionalIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
+{
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
-    while (l != f && p(source(predecessor(l))))
-        l = predecessor(l);
-    return l;
+    while l != *f && p.call(l.predecessor().source()) {
+        l = l.predecessor();
+    }
+    l
 }
-
 
 // Exercise 6.8: optimized find_backward_if
 
-
 // Exercise 6.9: palindrome predicate
 
-
-template<typename I, typename P>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_backward_if_unguarded(I l, P p)
+pub fn find_backward_if_unguarded<I, P, Domain>(mut l: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + BidirectionalIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{some}(f, l, p)$
-    do l = predecessor(l); while (!p(source(l)));
-    return l;
+    loop {
+        l = l.predecessor();
+        if p.call(l.source()) {
+            break;
+        }
+    }
+    l
     // Postcondition: $p(\func{source}(l))$
 }
 
-template<typename I, typename P>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I find_backward_if_not_unguarded(I l, P p)
+pub fn find_backward_if_not_unguarded<I, P, Domain>(mut l: I, p: &P) -> I
+where
+    I: Readable<ValueType = Domain> + BidirectionalIterator,
+    P: UnaryPredicate<Domain>,
+    Domain: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{not\_all}(f, l, p)$
-    do l = predecessor(l); while (p(source(l)));
-    return l;
+    loop {
+        l = l.predecessor();
+        if !p.call(l.source()) {
+            break;
+        }
+    }
+    l
     // Postcondition: $\neg p(\func{source}(l))$
 }
 
-
+/*
 //
 //  Chapter 7. Coordinate structures
 //
