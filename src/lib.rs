@@ -28,12 +28,16 @@
     clippy::type_repetition_in_bounds,
     clippy::use_self
 )]
-use num::{One, Zero};
+use num::{NumCast, One, Zero};
 mod integers;
 use integers::{
     binary_scale_up_nonnegative, even, half_nonnegative, odd, one, predecessor, successor, twice,
     zero, Integer, Regular,
 };
+use std::marker::PhantomData;
+#[macro_use]
+extern crate typenum;
+use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2, P3, P4, Z0};
 
 //
 //  Chapter 1. Foundations
@@ -79,7 +83,8 @@ where
 
 // Function object for equality
 
-pub struct Equal<T>(std::marker::PhantomData<T>)
+#[derive(Default)]
+pub struct Equal<T>(PhantomData<T>)
 where
     T: Regular;
 
@@ -87,11 +92,12 @@ pub trait Procedure {
     type InputType;
 }
 
-impl<T> Equal<T>
+impl<T> Relation for Equal<T>
 where
     T: Regular,
 {
-    fn _call(x: &T, y: &T) -> bool {
+    type Domain = T;
+    fn call(&self, x: &T, y: &T) -> bool {
         x == y
     }
 }
@@ -976,10 +982,6 @@ where
 
 // Order selection procedures with stability indices
 
-#[macro_use]
-extern crate typenum;
-use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2, P3, P4, Z0};
-
 pub trait CompareStrictOrReflexive<R>
 where
     R: Relation,
@@ -1247,7 +1249,7 @@ where
 // Natural total ordering
 
 #[derive(Default)]
-pub struct Less<T>(std::marker::PhantomData<T>)
+pub struct Less<T>(PhantomData<T>)
 where
     T: TotallyOrdered;
 
@@ -1326,7 +1328,7 @@ pub trait AdditiveSemigroup: Regular {
 }
 
 #[derive(Default)]
-pub struct Plus<T>(std::marker::PhantomData<T>);
+pub struct Plus<T>(PhantomData<T>);
 
 impl<T> BinaryOperation<T> for Plus<T>
 where
@@ -1349,7 +1351,7 @@ pub trait MultiplicativeSemigroup {
 }
 
 #[derive(Default)]
-pub struct Multiplies<T>(std::marker::PhantomData<T>);
+pub struct Multiplies<T>(PhantomData<T>);
 
 impl<T> BinaryOperation<T> for Multiplies<T>
 where
@@ -1402,7 +1404,7 @@ pub trait AdditiveGroup: AdditiveMonoid {
     fn neg(&self) -> Self;
 }
 
-pub struct Negate<T>(std::marker::PhantomData<T>);
+pub struct Negate<T>(PhantomData<T>);
 
 impl<T> Negate<T> {
     pub fn call(x: &T) -> T
@@ -2582,244 +2584,320 @@ where
     // Postcondition: $\neg p(\func{source}(l))$
 }
 
-/*
 //
 //  Chapter 7. Coordinate structures
 //
 
-
-template<typename C>
-    requires(BifurcateCoordinate(C))
-WeightType(C) weight_recursive(C c)
-{
-    // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    if (empty(c)) return N(0);
-    N l(0);
-    N r(0);
-    if (has_left_successor(c))
-        l = weight_recursive(left_successor(c));
-    if (has_right_successor(c))
-        r = weight_recursive(right_successor(c));
-    return successor(l + r);
+pub trait BifurcateCoordinate: Regular {
+    type WeightType: Integer;
+    fn empty(&self) -> bool;
+    fn has_left_successor(&self) -> bool;
+    fn has_right_successor(&self) -> bool;
+    fn left_successor(&self) -> Self;
+    fn right_successor(&self) -> Self;
 }
 
-template<typename C>
-    requires(BifurcateCoordinate(C))
-WeightType(C) height_recursive(C c)
+pub fn weight_recursive<C>(c: &C) -> C::WeightType
+where
+    C: BifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    if (empty(c)) return N(0);
-    N l(0);
-    N r(0);
-    if (has_left_successor(c))
-        l = height_recursive(left_successor(c));
-    if (has_right_successor(c))
-        r = height_recursive(right_successor(c));
-    return successor(max(l, r));
+    if c.empty() {
+        return C::WeightType::zero();
+    }
+    let mut l = C::WeightType::zero();
+    let mut r = C::WeightType::zero();
+    if c.has_left_successor() {
+        l = weight_recursive(&c.left_successor());
+    }
+    if c.has_right_successor() {
+        r = weight_recursive(&c.right_successor());
+    }
+    successor(l + r)
 }
 
-enum visit { pre, in, post };
+pub fn height_recursive<C>(c: &C) -> C::WeightType
+where
+    C: BifurcateCoordinate,
+{
+    // Precondition: $\property{tree}(c)$
+    if c.empty() {
+        return C::WeightType::zero();
+    }
+    let mut l = C::WeightType::zero();
+    let mut r = C::WeightType::zero();
+    if c.has_left_successor() {
+        l = height_recursive(&c.left_successor());
+    }
+    if c.has_right_successor() {
+        r = height_recursive(&c.right_successor());
+    }
+    successor(max(&l, &r).clone())
+}
 
-template<typename C, typename Proc>
-    requires(BifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 2 &&
-        visit == InputType(Proc, 0) &&
-        C == InputType(Proc, 1))
-Proc traverse_nonempty(C c, Proc proc)
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+pub enum Visit {
+    Pre,
+    In_,
+    Post,
+}
+use Visit::{In_, Post, Pre};
+
+pub fn traverse_nonempty<C, Proc>(c: &C, mut proc: Proc) -> Proc
+where
+    C: BifurcateCoordinate,
+    Proc: FnMut(Visit, &C),
 {
     // Precondition: $\property{tree}(c) \wedge \neg \func{empty}(c)$
-    proc(pre, c);
-    if (has_left_successor(c))
-        proc = traverse_nonempty(left_successor(c), proc);
-    proc(in, c);
-    if (has_right_successor(c))
-        proc = traverse_nonempty(right_successor(c), proc);
-    proc(post, c);
-    return proc;
+    proc(Pre, c);
+    if c.has_left_successor() {
+        proc = traverse_nonempty(&c.left_successor(), proc);
+    }
+    proc(In_, c);
+    if c.has_right_successor() {
+        proc = traverse_nonempty(&c.right_successor(), proc);
+    }
+    proc(Post, c);
+    proc
 }
 
-template<typename T>
-    requires(BidirectionalBifurcateCoordinate(T))
-bool is_left_successor(T j)
+pub trait BidirectionalBifurcateCoordinate: BifurcateCoordinate {
+    fn has_predecessor(&self) -> bool;
+    fn predecessor(&self) -> Self;
+}
+
+pub fn is_left_successor<T>(j: &T) -> bool
+where
+    T: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\func{has\_predecessor}(j)$
-    T i = predecessor(j);
-    return has_left_successor(i) && left_successor(i) == j;
+    let i = j.predecessor();
+    i.has_left_successor() && i.left_successor() == *j
 }
 
-template<typename T>
-    requires(BidirectionalBifurcateCoordinate(T))
-bool is_right_successor(T j)
+pub fn is_right_successor<T>(j: &T) -> bool
+where
+    T: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\func{has\_predecessor}(j)$
-    T i = predecessor(j);
-    return has_right_successor(i) && right_successor(i) == j;
+    let i = j.predecessor();
+    i.has_right_successor() && i.right_successor() == *j
 }
 
-template<typename C>
-    requires(BidirectionalBifurcateCoordinate(C))
-int traverse_step(visit& v, C& c)
+pub fn traverse_step<C>(v: &mut Visit, c: &mut C) -> i32
+where
+    C: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\func{has\_predecessor}(c) \vee v \neq post$
-    switch (v) {
-    case pre:
-        if (has_left_successor(c))  {
-                     c = left_successor(c);  return 1;
-        }   v = in;                          return 0;
-    case in:
-        if (has_right_successor(c)) {
-            v = pre; c = right_successor(c); return 1;
-        }   v = post;                        return 0;
-    case post:
-        if (is_left_successor(c))
-            v = in;
-                     c = predecessor(c);     return -1;
+    match v {
+        Pre => {
+            if c.has_left_successor() {
+                *c = c.left_successor();
+                return 1;
+            }
+            *v = In_;
+            0
+        }
+        In_ => {
+            if c.has_right_successor() {
+                *v = Pre;
+                *c = c.right_successor();
+                return 1;
+            }
+            *v = Post;
+            0
+        }
+        Post => {
+            if is_left_successor(c) {
+                *v = In_;
+            }
+            *c = c.predecessor();
+            -1
+        }
     }
 }
 
-template<typename C>
-    requires(BidirectionalBifurcateCoordinate(C))
-bool reachable(C x, C y)
+pub fn reachable<C>(mut x: C, y: &C) -> bool
+where
+    C: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(x)$
-    if (empty(x)) return false;
-    C root = x;
-    visit v = pre;
-    do {
-        if (x == y) return true;
-        traverse_step(v, x);
-    } while (x != root || v != post);
-    return false;
+    if x.empty() {
+        return false;
+    }
+    let root = x.clone();
+    let mut v = Pre;
+    loop {
+        if x == *y {
+            return true;
+        }
+        traverse_step(&mut v, &mut x);
+        if x == root && v == Post {
+            break;
+        }
+    }
+    false
 }
 
-template<typename C>
-    requires(BidirectionalBifurcateCoordinate(C))
-WeightType(C) weight(C c)
+pub fn weight<C>(mut c: C) -> C::WeightType
+where
+    C: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    if (empty(c)) return N(0);
-    C root = c;
-    visit v = pre;
-    N n(1); // Invariant: $n$ is count of $\type{pre}$ visits so far
-    do {
-        traverse_step(v, c);
-        if (v == pre) n = successor(n);
-    } while (c != root || v != post);
-    return n;
+    if c.empty() {
+        return C::WeightType::zero();
+    }
+    let root = c.clone();
+    let mut v = Pre;
+    let mut n = C::WeightType::one(); // Invariant: $n$ is count of $\type{pre}$ visits so far
+    loop {
+        traverse_step(&mut v, &mut c);
+        if v == Pre {
+            n = successor(n);
+        }
+        if c == root && v == Post {
+            break;
+        }
+    }
+    n
 }
 
-template<typename C>
-    requires(BidirectionalBifurcateCoordinate(C))
-WeightType(C) height(C c)
+pub fn height<C>(mut c: C) -> C::WeightType
+where
+    C: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    if (empty(c)) return N(0);
-    C root = c;
-    visit v = pre;
-    N n(1); // Invariant: $n$ is max of height of $\type{pre}$ visits so far
-    N m(1); // Invariant: $m$ is height of current $\type{pre}$ visit
-    do {
-        m = (m - N(1)) + N(traverse_step(v, c) + 1);
-        n = max(n, m);
-    } while (c != root || v != post);
-    return n;
+    if c.empty() {
+        return C::WeightType::zero();
+    }
+    let root = c.clone();
+    let mut v = Pre;
+    let mut n = C::WeightType::one(); // Invariant: $n$ is max of height of $\type{pre}$ visits so far
+    let mut m = C::WeightType::one(); // Invariant: $m$ is height of current $\type{pre}$ visit
+    loop {
+        m = (m - C::WeightType::one()) + NumCast::from(traverse_step(&mut v, &mut c) + 1).unwrap();
+        n = max(&n, &m).clone();
+        if c == root && v == Post {
+            break;
+        }
+    }
+    n
 }
 
-template<typename C, typename Proc>
-    requires(BidirectionalBifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 2 &&
-        visit == InputType(Proc, 0) &&
-        C == InputType(Proc, 1))
-Proc traverse(C c, Proc proc)
+pub fn traverse<C, Proc>(mut c: C, mut proc: Proc) -> Proc
+where
+    C: BidirectionalBifurcateCoordinate,
+    Proc: FnMut(&Visit, &C),
 {
     // Precondition: $\property{tree}(c)$
-    if (empty(c)) return proc;
-    C root = c;
-    visit v = pre;
-    proc(pre, c);
-    do {
-        traverse_step(v, c);
-        proc(v, c);
-    } while (c != root || v != post);
-    return proc;
+    if c.empty() {
+        return proc;
+    }
+    let root = c.clone();
+    let mut v = Pre;
+    proc(&Pre, &c);
+    loop {
+        traverse_step(&mut v, &mut c);
+        proc(&v, &c);
+        if c == root && v == Post {
+            break;
+        }
+    }
+    proc
 }
-
 
 // Exercise 7.3: Use traverse_step and the procedures of Chapter 2 to determine
 // whether the descendants of a bidirectional bifurcate coordinate form a DAG
 
-
-template<typename C0, typename C1>
-    requires(BifurcateCoordinate(C0) &&
-        BifurcateCoordinate(C1))
-bool bifurcate_isomorphic_nonempty(C0 c0, C1 c1)
+pub fn bifurcate_isomorphic_nonempty<C0, C1>(c0: &C0, c1: &C1) -> bool
+where
+    C0: BifurcateCoordinate,
+    C1: BifurcateCoordinate,
 {
     // Precondition:
     // $\property{tree}(c0) \wedge \property{tree}(c1) \wedge \neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
-    if (has_left_successor(c0))
-        if (has_left_successor(c1)) {
-            if (!bifurcate_isomorphic_nonempty(
-                    left_successor(c0), left_successor(c1)))
+    if c0.has_left_successor() {
+        if c1.has_left_successor() {
+            if !bifurcate_isomorphic_nonempty(&c0.left_successor(), &c1.left_successor()) {
                 return false;
-        } else return false;
-    else if (has_left_successor(c1)) return false;
-    if (has_right_successor(c0))
-        if (has_right_successor(c1)) {
-            if (!bifurcate_isomorphic_nonempty(
-                    right_successor(c0), right_successor(c1)))
+            }
+        } else {
+            return false;
+        }
+    } else if c1.has_left_successor() {
+        return false;
+    }
+    if c0.has_right_successor() {
+        if c1.has_right_successor() {
+            if !bifurcate_isomorphic_nonempty(&c0.right_successor(), &c1.right_successor()) {
                 return false;
-        } else return false;
-    else if (has_right_successor(c1)) return false;
-    return true;
+            }
+        } else {
+            return false;
+        }
+    } else if c1.has_right_successor() {
+        return false;
+    }
+    true
 }
 
-template<typename C0, typename C1>
-    requires(BidirectionalBifurcateCoordinate(C0) &&
-        BidirectionalBifurcateCoordinate(C1))
-bool bifurcate_isomorphic(C0 c0, C1 c1)
+pub fn bifurcate_isomorphic<C0, C1>(mut c0: C0, mut c1: C1) -> bool
+where
+    C0: BidirectionalBifurcateCoordinate,
+    C1: BidirectionalBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c0) \wedge \property{tree}(c1)$
-    if (empty(c0)) return empty(c1);
-    if (empty(c1)) return false;
-    C0 root0 = c0;
-    visit v0 = pre;
-    visit v1 = pre;
-    while (true) {
-        traverse_step(v0, c0);
-        traverse_step(v1, c1);
-        if (v0 != v1) return false;
-        if (c0 == root0 && v0 == post) return true;
+    if c0.empty() {
+        return c1.empty();
+    }
+    if c1.empty() {
+        return false;
+    }
+    let root0 = c0.clone();
+    let mut v0 = Pre;
+    let mut v1 = Pre;
+    loop {
+        traverse_step(&mut v0, &mut c0);
+        traverse_step(&mut v1, &mut c1);
+        if v0 != v1 {
+            return false;
+        }
+        if c0 == root0 && v0 == Post {
+            return true;
+        }
     }
 }
 
-template<typename I0, typename I1, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Relation(R) && ValueType(I0) == Domain(R))
-bool lexicographical_equivalent(I0 f0, I0 l0, I1 f1, I1 l1, R r)
+pub fn lexicographical_equivalent<I0, I1, R, Domain>(
+    f0: I0,
+    l0: &I0,
+    f1: I1,
+    l1: &I1,
+    r: &R,
+) -> bool
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
     // Precondition: $\property{equivalence}(r)$
-    pair<I0, I1> p = find_mismatch(f0, l0, f1, l1, r);
-    return p.m0 == l0 && p.m1 == l1;
+    let p = find_mismatch(f0, l0, f1, l1, r);
+    p.m0 == *l0 && p.m1 == *l1
 }
 
-template<typename I0, typename I1>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-bool lexicographical_equal(I0 f0, I0 l0, I1 f1, I1 l1)
+pub fn lexicographical_equal<I0, I1, Domain>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    Domain: Regular,
 {
-    return lexicographical_equivalent(f0, l0, f1, l1,
-                                      equal<ValueType(I0)>());
+    lexicographical_equivalent(f0, l0, f1, l1, &Equal::default())
 }
 
+/*
 // Could specialize to use lexicographic_equal for k > some cutoff
 template<int k, typename I0, typename I1>
    requires(Readable(I0) && ForwardIterator(I0) &&
@@ -2833,7 +2911,9 @@ struct lexicographical_equal_k
        return lexicographical_equal_k<k - 1, I0, I1>()(successor(f0), successor(f1));
    }
 };
+*/
 
+/*
 template<typename I0, typename I1>
 struct lexicographical_equal_k<0, I0, I1>
 {
@@ -2842,102 +2922,132 @@ struct lexicographical_equal_k<0, I0, I1>
        return true;
    }
 };
+*/
 
-template<typename C0, typename C1, typename R>
-    requires(Readable(C0) && BifurcateCoordinate(C0) &&
-        Readable(C1) && BifurcateCoordinate(C1) &&
-        ValueType(C0) == ValueType(C1) &&
-        Relation(R) && ValueType(C0) == Domain(R))
-bool bifurcate_equivalent_nonempty(C0 c0, C1 c1, R r)
+pub fn bifurcate_equivalent_nonempty<C0, C1, R, Domain>(c0: &C0, c1: &C1, r: &R) -> bool
+where
+    C0: Readable<ValueType = Domain> + BifurcateCoordinate,
+    C1: Readable<ValueType = Domain> + BifurcateCoordinate,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
     // Precondition: $\property{equivalence}(r)$
-    if (!r(source(c0), source(c1))) return false;
-    if (has_left_successor(c0))
-        if (has_left_successor(c1)) {
-            if (!bifurcate_equivalent_nonempty(
-                  left_successor(c0), left_successor(c1), r))
+    if !r.call(c0.source(), c1.source()) {
+        return false;
+    }
+    if c0.has_left_successor() {
+        if c1.has_left_successor() {
+            if !bifurcate_equivalent_nonempty(&c0.left_successor(), &c1.left_successor(), r) {
                 return false;
-        } else return false;
-    else if (has_left_successor(c1)) return false;
-    if (has_right_successor(c0))
-        if (has_right_successor(c1)) {
-            if (!bifurcate_equivalent_nonempty(
-                  right_successor(c0), right_successor(c1), r))
+            }
+        } else {
+            return false;
+        }
+    } else if c1.has_left_successor() {
+        return false;
+    }
+    if c0.has_right_successor() {
+        if c1.has_right_successor() {
+            if !bifurcate_equivalent_nonempty(&c0.right_successor(), &c1.right_successor(), r) {
                 return false;
-        } else return false;
-    else if (has_right_successor(c1)) return false;
-    return true;
+            }
+        } else {
+            return false;
+        }
+    } else if c1.has_right_successor() {
+        return false;
+    }
+    true
 }
 
-template<typename C0, typename C1, typename R>
-    requires(Readable(C0) &&
-        BidirectionalBifurcateCoordinate(C0) &&
-        Readable(C1) &&
-        BidirectionalBifurcateCoordinate(C1) &&
-        ValueType(C0) == ValueType(C1) &&
-        Relation(R) && ValueType(C0) == Domain(R))
-bool bifurcate_equivalent(C0 c0, C1 c1, R r)
+pub fn bifurcate_equivalent<C0, C1, R, Domain>(mut c0: C0, mut c1: C1, r: &R) -> bool
+where
+    C0: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\property{equivalence}(r)$
-    if (empty(c0)) return empty(c1);
-    if (empty(c1)) return false;
-    C0 root0 = c0;
-    visit v0 = pre;
-    visit v1 = pre;
-    while (true) {
-        if (v0 == pre && !r(source(c0), source(c1)))
+    if c0.empty() {
+        return c1.empty();
+    }
+    if c1.empty() {
+        return false;
+    }
+    let root0 = c0.clone();
+    let mut v0 = Pre;
+    let mut v1 = Pre;
+    loop {
+        if v0 == Pre && !r.call(c0.source(), c1.source()) {
             return false;
-        traverse_step(v0, c0);
-        traverse_step(v1, c1);
-        if (v0 != v1) return false;
-        if (c0 == root0 && v0 == post) return true;
+        }
+        traverse_step(&mut v0, &mut c0);
+        traverse_step(&mut v1, &mut c1);
+        if v0 != v1 {
+            return false;
+        }
+        if c0 == root0 && v0 == Post {
+            return true;
+        }
     }
 }
 
-template<typename C0, typename C1>
-    requires(Readable(C0) &&
-        BidirectionalBifurcateCoordinate(C0) &&
-        Readable(C1) &&
-        BidirectionalBifurcateCoordinate(C1) &&
-        ValueType(C0) == ValueType(C1))
-bool bifurcate_equal(C0 c0, C1 c1)
+pub fn bifurcate_equal<C0, C1, Domain>(c0: C0, c1: C1) -> bool
+where
+    C0: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
+    Domain: Regular,
 {
-    return bifurcate_equivalent(c0, c1, equal<ValueType(C0)>());
+    bifurcate_equivalent(c0, c1, &Equal::default())
 }
 
-template<typename I0, typename I1, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Relation(R) && ValueType(I0) == Domain(R))
-bool lexicographical_compare(I0 f0, I0 l0, I1 f1, I1 l1, R r)
+pub fn lexicographical_compare<I0, I1, R, Domain>(
+    mut f0: I0,
+    l0: &I0,
+    mut f1: I1,
+    l1: &I1,
+    r: &R,
+) -> bool
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
     // Precondition: $\property{weak\_ordering}(r)$
-    while (true) {
-        if (f1 == l1) return false;
-        if (f0 == l0) return true;
-        if (r(source(f0), source(f1))) return true;
-        if (r(source(f1), source(f0))) return false;
-        f0 = successor(f0);
-        f1 = successor(f1);
+    loop {
+        if f1 == *l1 {
+            return false;
+        }
+        if f0 == *l0 {
+            return true;
+        }
+        if r.call(f0.source(), f1.source()) {
+            return true;
+        }
+        if r.call(f1.source(), f0.source()) {
+            return false;
+        }
+        f0 = f0.successor();
+        f1 = f1.successor();
     }
 }
 
-template<typename I0, typename I1>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-bool lexicographical_less(I0 f0, I0 l0, I1 f1, I1 l1)
+pub fn lexicographical_less<I0, I1, Domain>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    Domain: Regular + TotallyOrdered,
 {
-    return lexicographical_compare(f0, l0, f1, l1,
-                                   less<ValueType(I0)>());
+    lexicographical_compare(f0, l0, f1, l1, &Less::default())
 }
 
+/*
 template<int k, typename I0, typename I1>
    requires(Readable(I0) && ForwardIterator(I0) &&
        Readable(I1) && ForwardIterator(I1) &&
@@ -2962,7 +3072,7 @@ struct lexicographical_less_k<0, I0, I1>
        return false;
    }
 };
-
+*/
 
 // Exercise 7.6: bifurcate_compare_nonempty (using 3-way comparsion)
 
@@ -2980,140 +3090,190 @@ struct lexicographical_less_k<0, I0, I1>
 //  (allowing subtraction as the comparator for numbers)
 //  Should sense of positive/negative be flipped?
 
-template<typename R>
-    requires(Relation(R))
-struct comparator_3_way
+pub trait Compare3Way<T> {
+    fn call(&self, a: &T, b: &T) -> i32;
+}
+
+pub struct Comparator3Way<R> {
+    r: R,
+}
+
+impl<R> Comparator3Way<R>
+where
+    R: Relation,
 {
-    typedef Domain(R) T;
-    R r;
-    comparator_3_way(R r) : r(r)
-    {
+    pub fn new(r: R) -> Self {
         // Precondition: $\property{weak\_ordering}(r)$
+        Self { r }
         // Postcondition: three_way_compare(comparator_3_way(r))
     }
-    int operator()(const T& a, const T& b)
-    {
-        if (r(a, b)) return 1;
-        if (r(b, a)) return -1;
-        return 0;
-    }
-};
+}
 
-template<typename I0, typename I1, typename F>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Comparator3Way(F) && ValueType(I0) == Domain(F))
-int lexicographical_compare_3way(I0 f0, I0 l0, I1 f1, I1 l1, F comp)
+impl<R> Compare3Way<R::Domain> for Comparator3Way<R>
+where
+    R: Relation,
+{
+    fn call(&self, a: &R::Domain, b: &R::Domain) -> i32 {
+        if self.r.call(a, b) {
+            return 1;
+        }
+        if self.r.call(b, a) {
+            return -1;
+        }
+        0
+    }
+}
+
+pub fn lexicographical_compare_3way<I0, I1, F, R, Domain>(
+    mut f0: I0,
+    l0: &I0,
+    mut f1: I1,
+    l1: &I1,
+    comp: &F,
+) -> i32
+where
+    I0: Readable<ValueType = Domain> + Iterator,
+    I1: Readable<ValueType = Domain> + Iterator,
+    F: Compare3Way<Domain>,
+    R: Relation<Domain = Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
     // Precondition: $\property{three\_way\_compare}(comp)$
-    while (true) {
-        if (f0 == l0)
-            if (f1 == l1) return 0;
-            else return 1;
-        if (f1 == l1) return -1;
-        int tmp = comp(source(f0), source(f1));
-        if (tmp != 0) return tmp;
-        f0 = successor(f0);
-        f1 = successor(f1);
+    loop {
+        if f0 == *l0 {
+            if f1 == *l1 {
+                return 0;
+            } else {
+                return 1;
+            }
+        }
+        if f1 == *l1 {
+            return -1;
+        }
+        let tmp = comp.call(f0.source(), f1.source());
+        if tmp != 0 {
+            return tmp;
+        }
+        f0 = f0.successor();
+        f1 = f1.successor();
     }
 }
 
-template<typename C0, typename C1, typename F>
-    requires(Readable(C0) && BifurcateCoordinate(C0) &&
-        Readable(C1) && BifurcateCoordinate(C1) &&
-        ValueType(C0) == ValueType(C1) &&
-        Comparator3Way(F) && ValueType(I0) == Domain(F))
-int bifurcate_compare_nonempty(C0 c0, C1 c1, F comp)
+pub fn bifurcate_compare_nonempty<C0, C1, F, Domain>(c0: &C0, c1: &C1, comp: &F) -> i32
+where
+    C0: Readable<ValueType = Domain> + BifurcateCoordinate,
+    C1: Readable<ValueType = Domain> + BifurcateCoordinate,
+    F: Compare3Way<Domain>,
+    Domain: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
     // Precondition: $\property{three\_way\_compare}(comp)$
-    int tmp = comp(source(c0), source(c1));
-    if (tmp != 0) return tmp;
-    if (has_left_successor(c0))
-        if (has_left_successor(c1)) {
-            tmp = bifurcate_compare_nonempty(left_successor(c0), left_successor(c1),
-                                             comp);
-            if (tmp != 0) return tmp;
-        } else return -1;
-    else if (has_left_successor(c1)) return 1;
-    if (has_right_successor(c0))
-        if (has_right_successor(c1)) {
-            tmp = bifurcate_compare_nonempty(right_successor(c0), right_successor(c1),
-                                             comp);
-            if (tmp != 0) return tmp;
-        } else return -1;
-    else if (has_right_successor(c1)) return 1;
-    return 0;
+    let mut tmp = comp.call(c0.source(), c1.source());
+    if tmp != 0 {
+        return tmp;
+    }
+    if c0.has_left_successor() {
+        if c1.has_left_successor() {
+            tmp = bifurcate_compare_nonempty(&c0.left_successor(), &c1.left_successor(), comp);
+            if tmp != 0 {
+                return tmp;
+            }
+        } else {
+            return -1;
+        }
+    } else if c1.has_left_successor() {
+        return 1;
+    }
+    if c0.has_right_successor() {
+        if c1.has_right_successor() {
+            tmp = bifurcate_compare_nonempty(&c0.right_successor(), &c1.right_successor(), comp);
+            if tmp != 0 {
+                return tmp;
+            }
+        } else {
+            return -1;
+        }
+    } else if c1.has_right_successor() {
+        return 1;
+    }
+    0
 }
 
-template<typename C0, typename C1, typename R>
-    requires(Readable(C0) &&
-        BidirectionalBifurcateCoordinate(C0) &&
-        Readable(C1) &&
-        BidirectionalBifurcateCoordinate(C1) &&
-        ValueType(C0) == ValueType(C1) &&
-        Relation(R) && ValueType(C0) == Domain(R))
-bool bifurcate_compare(C0 c0, C1 c1, R r)
+pub fn bifurcate_compare<C0, C1, R>(mut c0: C0, mut c1: C1, r: &R) -> bool
+where
+    C0: Readable + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
+    R: Relation<Domain = C0::ValueType>,
+    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge
     //                \property{readable\_tree}(c1) \wedge
     //                \property{weak\_ordering}(r)$
-    if (empty(c1)) return false;
-    if (empty(c0)) return true;
-    C0 root0 = c0;
-    visit v0 = pre;
-    visit v1 = pre;
-    while (true) {
-        if (v0 == pre) {
-            if (r(source(c0), source(c1))) return true;
-            if (r(source(c1), source(c0))) return false;
-        }
-        traverse_step(v0, c0);
-        traverse_step(v1, c1);
-        if (v0 != v1) return v0 > v1;
-        if (c0 == root0 && v0 == post) return false;
-    }
-}
-
-template<typename C0, typename C1>
-    requires(Readable(C0) &&
-        BidirectionalBifurcateCoordinate(C0) &&
-        Readable(C1) &&
-        BidirectionalBifurcateCoordinate(C1))
-bool bifurcate_less(C0 c0, C1 c1)
-{
-    // Precondition: $\property{readable\_tree}(c0) \wedge
-    //                \property{readable\_tree}(c1)
-    return bifurcate_compare(c0, c1, less<ValueType(C0)>());
-}
-
-template<typename T>
-    requires(TotallyOrdered(T))
-struct always_false
-{
-    bool operator()(const T& x, const T& y)
-    {
+    if c1.empty() {
         return false;
     }
-};
+    if c0.empty() {
+        return true;
+    }
+    let root0 = c0.clone();
+    let mut v0 = Pre;
+    let mut v1 = Pre;
+    loop {
+        if v0 == Pre {
+            if r.call(c0.source(), c1.source()) {
+                return true;
+            }
+            if r.call(c1.source(), c0.source()) {
+                return false;
+            }
+        }
+        traverse_step(&mut v0, &mut c0);
+        traverse_step(&mut v1, &mut c1);
+        if v0 != v1 {
+            return v0 > v1;
+        };
+        if c0 == root0 && v0 == Post {
+            return false;
+        }
+    }
+}
 
-template<typename C0, typename C1>
-    requires(Readable(C0) &&
-        BidirectionalBifurcateCoordinate(C0) &&
-        Readable(C1) &&
-        BidirectionalBifurcateCoordinate(C1))
-bool bifurcate_shape_compare(C0 c0, C1 c1)
+pub fn bifurcate_less<C0, C1>(c0: C0, c1: C1) -> bool
+where
+    C0: Readable + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
+    C0::ValueType: Regular + TotallyOrdered,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge
     //                \property{readable\_tree}(c1)
-    return bifurcate_compare(c0, c1, always_false<ValueType(C0)>());
+    bifurcate_compare(c0, c1, &Less::default())
 }
 
+#[derive(Default)]
+pub struct AlwaysFalse<T>(PhantomData<T>);
 
+impl<T> Relation for AlwaysFalse<T> {
+    type Domain = T;
+    #[must_use]
+    fn call(&self, _: &T, _: &T) -> bool {
+        false
+    }
+}
+
+pub fn bifurcate_shape_compare<C0, C1>(c0: C0, c1: C1) -> bool
+where
+    C0: Readable + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
+{
+    // Precondition: $\property{readable\_tree}(c0) \wedge
+    //                \property{readable\_tree}(c1)
+    bifurcate_compare(c0, c1, &AlwaysFalse::default())
+}
+
+/*
 //
 //  Chapter 8. Coordinates with mutable successors
 //

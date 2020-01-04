@@ -16,7 +16,7 @@
 // by Alexander Stepanov and Paul McJones
 // Addison-Wesley Professional, 2009
 
-use num::{One, Zero};
+use num::{NumCast, One, Zero};
 use std::ops::{BitAnd, Div, Rem, Shl, Shr, Sub};
 
 pub trait Regular: Clone + Default + Eq {
@@ -26,6 +26,7 @@ pub trait Regular: Clone + Default + Eq {
 pub trait Integer:
     BitAnd<Self, Output = Self>
     + Div<Self, Output = Self>
+    + NumCast
     + One
     + Ord
     + Regular
