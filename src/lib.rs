@@ -199,166 +199,173 @@ pub fn euclidean_norm_3(x: f64, y: f64, z: f64) -> f64 {
     (x * x + y * y + z * z).sqrt()
 } // ternary operation
 
-pub trait Transformation<Domain>: Fn(Domain) -> Domain {
+pub trait Transformation {
+    type Domain;
     type DistanceType: Integer;
+    fn call(&self, x: Self::Domain) -> Self::Domain;
 }
 
-pub fn power_unary<Domain, F, N>(mut x: Domain, mut n: N, f: &F) -> Domain
+pub fn power_unary<F, N>(mut x: F::Domain, mut n: N, f: &F) -> F::Domain
 where
-    F: Transformation<Domain>,
+    F: Transformation,
     N: Integer,
 {
     // Precondition:
     // $n \geq 0 \wedge (\forall i \in N)\,0 < i \leq n \Rightarrow f^i(x)$ is defined
     while n != N::zero() {
         n = n - N::one();
-        x = f(x);
+        x = f.call(x);
     }
     x
 }
 
-pub fn distance<Domain, F>(mut x: Domain, y: &Domain, f: &F) -> F::DistanceType
+pub fn distance<F>(mut x: F::Domain, y: &F::Domain, f: &F) -> F::DistanceType
 where
-    F: Transformation<Domain>,
-    Domain: Regular,
+    F: Transformation,
+    F::Domain: Regular,
 {
     // Precondition: $y$ is reachable from $x$ under $f$
     let mut n = F::DistanceType::zero();
     while x != *y {
-        x = f(x);
+        x = f.call(x);
         n = n + F::DistanceType::one();
     }
     n
 }
 
-pub trait UnaryPredicate<Domain> {
-    fn call(&self, x: &Domain) -> bool;
+pub trait UnaryPredicate {
+    type Domain;
+    fn call(&self, x: &Self::Domain) -> bool;
 }
 
-pub fn collision_point<Domain, F, P>(x: Domain, f: &F, p: &P) -> Domain
+pub fn collision_point<F, P>(x: F::Domain, f: &F, p: &P) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
-    P: UnaryPredicate<Domain>,
+    F: Transformation,
+    P: UnaryPredicate<Domain = F::Domain>,
+    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     if !p.call(&x) {
         return x;
     }
     let mut slow = x.clone(); // $slow = f^0(x)$
-    let mut fast = f(x); // $fast = f^1(x)$
-                         // $n \gets 0$ (completed iterations)
+    let mut fast = f.call(x); // $fast = f^1(x)$
+                              // $n \gets 0$ (completed iterations)
     while fast != slow {
         // $slow = f^n(x) \wedge fast = f^{2 n + 1}(x)$
-        slow = f(slow); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 1}(x)$
+        slow = f.call(slow); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 1}(x)$
         if !p.call(&fast) {
             return fast;
         }
-        fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 2}(x)$
+        fast = f.call(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 2}(x)$
         if !p.call(&fast) {
             return fast;
         }
-        fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 3}(x)$
-                        // $n \gets n + 1$
+        fast = f.call(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 3}(x)$
+                             // $n \gets n + 1$
     }
     fast // $slow = f^n(x) \wedge fast = f^{2 n + 1}(x)$
          // Postcondition: return value is terminal point or collision point
 }
 
-pub fn terminating<Domain, F, P>(x: Domain, f: &F, p: &P) -> bool
+pub fn terminating<F, P>(x: F::Domain, f: &F, p: &P) -> bool
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
-    P: UnaryPredicate<Domain>,
+    F: Transformation,
+    P: UnaryPredicate<Domain = F::Domain>,
+    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     !p.call(&collision_point(x, f, p))
 }
 
-pub fn collision_point_nonterminating_orbit<Domain, F>(x: Domain, f: &F) -> Domain
+pub fn collision_point_nonterminating_orbit<F>(x: F::Domain, f: &F) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
     let mut slow = x.clone(); // $slow = f^0(x)$
-    let mut fast = f(x); // $fast = f^1(x)$
-                         // $n \gets 0$ (completed iterations)
+    let mut fast = f.call(x); // $fast = f^1(x)$
+                              // $n \gets 0$ (completed iterations)
     while fast != slow {
         // $slow = f^n(x) \wedge fast = f^{2 n + 1}(x)$
-        slow = f(slow); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 1}(x)$
-        fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 2}(x)$
-        fast = f(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 3}(x)$
-                        // $n \gets n + 1$
+        slow = f.call(slow); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 1}(x)$
+        fast = f.call(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 2}(x)$
+        fast = f.call(fast); // $slow = f^{n+1}(x) \wedge fast = f^{2 n + 3}(x)$
+                             // $n \gets n + 1$
     }
     fast // $slow = f^n(x) \wedge fast = f^{2 n + 1}(x)$
          // Postcondition: return value is collision point
 }
 
-pub fn circular_nonterminating_orbit<Domain, F>(x: &Domain, f: &F) -> bool
+pub fn circular_nonterminating_orbit<F>(x: &F::Domain, f: &F) -> bool
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
-    x == &f(collision_point_nonterminating_orbit(x.clone(), f))
+    x == &f.call(collision_point_nonterminating_orbit(x.clone(), f))
 }
 
-pub fn circular<Domain, F, P>(x: &Domain, f: &F, p: &P) -> bool
+pub fn circular<F, P>(x: &F::Domain, f: &F, p: &P) -> bool
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
-    P: UnaryPredicate<Domain>,
+    F: Transformation,
+    P: UnaryPredicate<Domain = F::Domain>,
+    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
-    p.call(&y) && x == &f(y)
+    p.call(&y) && x == &f.call(y)
 }
 
-pub fn convergent_point<Domain, F>(mut x0: Domain, mut x1: Domain, f: &F) -> Domain
+pub fn convergent_point<F>(mut x0: F::Domain, mut x1: F::Domain, f: &F) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
     // Precondition: $(\exists n \in \func{DistanceType}(F))\,n \geq 0 \wedge f^n(x0) = f^n(x1)$
     while x0 != x1 {
-        x0 = f(x0);
-        x1 = f(x1);
+        x0 = f.call(x0);
+        x1 = f.call(x1);
     }
     x0
 }
 
-pub fn connection_point_nonterminating_orbit<Domain, F>(x: Domain, f: &F) -> Domain
+pub fn connection_point_nonterminating_orbit<F>(x: F::Domain, f: &F) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
-    convergent_point(x.clone(), f(collision_point_nonterminating_orbit(x, f)), f)
+    convergent_point(
+        x.clone(),
+        f.call(collision_point_nonterminating_orbit(x, f)),
+        f,
+    )
 }
 
-pub fn connection_point<Domain, F, P>(x: Domain, f: &F, p: &P) -> Domain
+pub fn connection_point<F, P>(x: F::Domain, f: &F, p: &P) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
-    P: UnaryPredicate<Domain>,
+    F: Transformation,
+    P: UnaryPredicate<Domain = F::Domain>,
+    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
     if !p.call(&y) {
         return y;
     }
-    convergent_point(x, f(y), f)
+    convergent_point(x, f.call(y), f)
 }
 
 // Exercise 2.3:
 
-pub fn convergent_point_guarded<Domain, F>(
-    mut x0: Domain,
-    mut x1: Domain,
-    y: &Domain,
+pub fn convergent_point_guarded<F>(
+    mut x0: F::Domain,
+    mut x1: F::Domain,
+    y: &F::Domain,
     f: &F,
-) -> Domain
+) -> F::Domain
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
     // Precondition: $\func{reachable}(x0, y, f) \wedge \func{reachable}(x1, y, f)$
     let d0 = distance(x0.clone(), y, f);
@@ -371,34 +378,34 @@ where
     convergent_point(x0, x1, f)
 }
 
-pub fn orbit_structure_nonterminating_orbit<Domain, F>(
-    x: Domain,
+pub fn orbit_structure_nonterminating_orbit<F>(
+    x: F::Domain,
     f: &F,
-) -> Triple<F::DistanceType, F::DistanceType, Domain>
+) -> Triple<F::DistanceType, F::DistanceType, F::Domain>
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
+    F: Transformation,
+    F::Domain: Regular,
 {
     let y = connection_point_nonterminating_orbit(x.clone(), f);
-    Triple::new(distance(x, &y, f), distance(f(y.clone()), &y, f), y)
+    Triple::new(distance(x, &y, f), distance(f.call(y.clone()), &y, f), y)
 }
 
-pub fn orbit_structure<Domain, F, P>(
-    x: Domain,
+pub fn orbit_structure<F, P>(
+    x: F::Domain,
     f: &F,
     p: &P,
-) -> Triple<F::DistanceType, F::DistanceType, Domain>
+) -> Triple<F::DistanceType, F::DistanceType, F::Domain>
 where
-    Domain: Regular,
-    F: Transformation<Domain>,
-    P: UnaryPredicate<Domain>,
+    F: Transformation,
+    P: UnaryPredicate<Domain = F::Domain>,
+    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = connection_point(x.clone(), f, p);
     let m = distance(x, &y, f);
     let mut n = F::DistanceType::zero();
     if p.call(&y) {
-        n = distance(f(y.clone()), &y, f);
+        n = distance(f.call(y.clone()), &y, f);
     }
     // Terminating: $m = h - 1 \wedge n = 0$
     // Otherwise:   $m = h \wedge n = c - 1$
@@ -1923,7 +1930,7 @@ where
 pub fn find_if<I, P>(mut f: I, l: &I, p: &P) -> I
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     while f != *l && !p.call(f.source()) {
@@ -1935,7 +1942,7 @@ where
 pub fn find_if_not<I, P>(mut f: I, l: &I, p: &P) -> I
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     while f != *l && p.call(f.source()) {
@@ -1949,7 +1956,7 @@ where
 pub fn all<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if_not(f, l, p)
@@ -1958,7 +1965,7 @@ where
 pub fn none<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if(f, l, p)
@@ -1967,7 +1974,7 @@ where
 pub fn not_all<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     !all(f, l, p)
@@ -1976,7 +1983,7 @@ where
 pub fn some<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     !none(f, l, p)
@@ -1985,7 +1992,7 @@ where
 pub fn count_if<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
     J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2003,7 +2010,7 @@ where
 pub fn count_if_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
     I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2061,7 +2068,7 @@ where
 pub fn count_if_not<I, P, J>(mut f: I, l: &I, p: &P, mut j: J) -> J
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
     J: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2077,7 +2084,7 @@ where
 pub fn count_if_not_1<I, P>(f: I, l: &I, p: &P) -> I::DistanceType
 where
     I: Readable + Iterator,
-    P: UnaryPredicate<I::ValueType>,
+    P: UnaryPredicate<Domain = I::ValueType>,
     I::DistanceType: Iterator,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
@@ -2253,11 +2260,11 @@ where
 // Exercise 6.3: implement variations taking a weak range instead of a bounded range
 // of all the versions of find, quantifiers, count, and reduce
 
-pub fn find_if_unguarded<I, P, Domain>(mut f: I, p: &P) -> I
+pub fn find_if_unguarded<I, P>(mut f: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists l)\,\func{readable\_bounded\_range}(f, l) \wedge \func{some}(f, l, p)$
@@ -2268,11 +2275,11 @@ where
     // Postcondition: $p(\func{source}(f))$
 }
 
-pub fn find_if_not_unguarded<I, P, Domain>(mut f: I, p: &P) -> I
+pub fn find_if_not_unguarded<I, P>(mut f: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Let $l$ be the end of the implied range starting with $f$
     // Precondition:
@@ -2356,11 +2363,11 @@ where
     relation_preserving(f, l, &ComplementOfConverse::new(r.clone()))
 }
 
-pub fn partitioned<I, P, Domain>(f: I, l: &I, p: &P) -> bool
+pub fn partitioned<I, P>(f: I, l: &I, p: &P) -> bool
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if_not(find_if(f, l, p), l, p)
@@ -2391,11 +2398,11 @@ where
     f
 }
 
-pub fn partition_point_n<I, P, Domain>(mut f: I, mut n: I::DistanceType, p: &P) -> I
+pub fn partition_point_n<I, P>(mut f: I, mut n: I::DistanceType, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + ForwardIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $\func{readable\_counted\_range}(f, n) \wedge \func{partitioned\_n}(f, n, p)$
@@ -2412,11 +2419,11 @@ where
     f
 }
 
-pub fn partition_point<I, P, Domain>(f: I, l: I, p: &P) -> I
+pub fn partition_point<I, P>(f: I, l: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + ForwardIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{partitioned}(f, l, p)$
@@ -2441,20 +2448,21 @@ where
     }
 }
 
-impl<'a, R> UnaryPredicate<R::Domain> for LowerBoundPredicate<'a, R>
+impl<'a, R> UnaryPredicate for LowerBoundPredicate<'a, R>
 where
     R: Relation,
 {
-    fn call(&self, x: &R::Domain) -> bool {
+    type Domain = R::Domain;
+    fn call(&self, x: &Self::Domain) -> bool {
         !self.r.call(x, self.a)
     }
 }
 
-pub fn lower_bound_n<I, R, Domain>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
+pub fn lower_bound_n<I, R>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
 where
-    I: Readable<ValueType = Domain> + ForwardIterator,
-    R: Relation<Domain = Domain> + Regular,
-    Domain: Regular,
+    I: Readable + ForwardIterator,
+    R: Relation<Domain = I::ValueType> + Regular,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
@@ -2479,20 +2487,21 @@ where
     }
 }
 
-impl<'a, R> UnaryPredicate<R::Domain> for UpperBoundPredicate<'a, R>
+impl<'a, R> UnaryPredicate for UpperBoundPredicate<'a, R>
 where
     R: Relation,
 {
-    fn call(&self, x: &R::Domain) -> bool {
+    type Domain = R::Domain;
+    fn call(&self, x: &Self::Domain) -> bool {
         self.r.call(self.a, x)
     }
 }
 
-pub fn upper_bound_n<I, R, Domain>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
+pub fn upper_bound_n<I, R>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) -> I
 where
-    I: Readable<ValueType = Domain> + ForwardIterator,
-    R: Relation<Domain = Domain> + Regular,
-    Domain: Regular,
+    I: Readable + ForwardIterator,
+    R: Relation<Domain = I::ValueType> + Regular,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
@@ -2518,11 +2527,11 @@ where
     l
 }
 
-pub fn find_backward_if<I, P, Domain>(f: &I, mut l: I, p: &P) -> I
+pub fn find_backward_if<I, P>(f: &I, mut l: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + BidirectionalIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
     while l != *f && !p.call(l.predecessor().source()) {
@@ -2531,11 +2540,11 @@ where
     l
 }
 
-pub fn find_backward_if_not<I, P, Domain>(f: &I, mut l: I, p: &P) -> I
+pub fn find_backward_if_not<I, P>(f: &I, mut l: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + BidirectionalIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
     while l != *f && p.call(l.predecessor().source()) {
@@ -2548,11 +2557,11 @@ where
 
 // Exercise 6.9: palindrome predicate
 
-pub fn find_backward_if_unguarded<I, P, Domain>(mut l: I, p: &P) -> I
+pub fn find_backward_if_unguarded<I, P>(mut l: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + BidirectionalIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{some}(f, l, p)$
@@ -2566,11 +2575,11 @@ where
     // Postcondition: $p(\func{source}(l))$
 }
 
-pub fn find_backward_if_not_unguarded<I, P, Domain>(mut l: I, p: &P) -> I
+pub fn find_backward_if_not_unguarded<I, P>(mut l: I, p: &P) -> I
 where
-    I: Readable<ValueType = Domain> + BidirectionalIterator,
-    P: UnaryPredicate<Domain>,
-    Domain: Regular,
+    I: Readable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{not\_all}(f, l, p)$
