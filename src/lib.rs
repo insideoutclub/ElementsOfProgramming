@@ -2868,18 +2868,12 @@ where
     }
 }
 
-pub fn lexicographical_equivalent<I0, I1, R, Domain>(
-    f0: I0,
-    l0: &I0,
-    f1: I1,
-    l1: &I1,
-    r: &R,
-) -> bool
+pub fn lexicographical_equivalent<I0, I1, R>(f0: I0, l0: &I0, f1: I1, l1: &I1, r: &R) -> bool
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    R: Relation<Domain = I0::ValueType>,
+    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -2888,11 +2882,11 @@ where
     p.m0 == *l0 && p.m1 == *l1
 }
 
-pub fn lexicographical_equal<I0, I1, Domain>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
+pub fn lexicographical_equal<I0, I1>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    Domain: Regular,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    I0::ValueType: Regular,
 {
     lexicographical_equivalent(f0, l0, f1, l1, &Equal::default())
 }
@@ -2924,12 +2918,12 @@ struct lexicographical_equal_k<0, I0, I1>
 };
 */
 
-pub fn bifurcate_equivalent_nonempty<C0, C1, R, Domain>(c0: &C0, c1: &C1, r: &R) -> bool
+pub fn bifurcate_equivalent_nonempty<C0, C1, R>(c0: &C0, c1: &C1, r: &R) -> bool
 where
-    C0: Readable<ValueType = Domain> + BifurcateCoordinate,
-    C1: Readable<ValueType = Domain> + BifurcateCoordinate,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    C0: Readable + BifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BifurcateCoordinate,
+    R: Relation<Domain = C0::ValueType>,
+    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
@@ -2962,12 +2956,12 @@ where
     true
 }
 
-pub fn bifurcate_equivalent<C0, C1, R, Domain>(mut c0: C0, mut c1: C1, r: &R) -> bool
+pub fn bifurcate_equivalent<C0, C1, R>(mut c0: C0, mut c1: C1, r: &R) -> bool
 where
-    C0: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
-    C1: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    C0: Readable + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
+    R: Relation<Domain = C0::ValueType>,
+    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\property{equivalence}(r)$
@@ -2995,27 +2989,21 @@ where
     }
 }
 
-pub fn bifurcate_equal<C0, C1, Domain>(c0: C0, c1: C1) -> bool
+pub fn bifurcate_equal<C0, C1>(c0: C0, c1: C1) -> bool
 where
-    C0: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
-    C1: Readable<ValueType = Domain> + BidirectionalBifurcateCoordinate,
-    Domain: Regular,
+    C0: Readable + BidirectionalBifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
+    C0::ValueType: Regular,
 {
     bifurcate_equivalent(c0, c1, &Equal::default())
 }
 
-pub fn lexicographical_compare<I0, I1, R, Domain>(
-    mut f0: I0,
-    l0: &I0,
-    mut f1: I1,
-    l1: &I1,
-    r: &R,
-) -> bool
+pub fn lexicographical_compare<I0, I1, R>(mut f0: I0, l0: &I0, mut f1: I1, l1: &I1, r: &R) -> bool
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    R: Relation<Domain = I0::ValueType>,
+    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -3038,11 +3026,11 @@ where
     }
 }
 
-pub fn lexicographical_less<I0, I1, Domain>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
+pub fn lexicographical_less<I0, I1>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    Domain: Regular + TotallyOrdered,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    I0::ValueType: Regular + TotallyOrdered,
 {
     lexicographical_compare(f0, l0, f1, l1, &Less::default())
 }
@@ -3090,8 +3078,9 @@ struct lexicographical_less_k<0, I0, I1>
 //  (allowing subtraction as the comparator for numbers)
 //  Should sense of positive/negative be flipped?
 
-pub trait Compare3Way<T> {
-    fn call(&self, a: &T, b: &T) -> i32;
+pub trait Compare3Way {
+    type Domain;
+    fn call(&self, a: &Self::Domain, b: &Self::Domain) -> i32;
 }
 
 pub struct Comparator3Way<R> {
@@ -3109,11 +3098,12 @@ where
     }
 }
 
-impl<R> Compare3Way<R::Domain> for Comparator3Way<R>
+impl<R> Compare3Way for Comparator3Way<R>
 where
     R: Relation,
 {
-    fn call(&self, a: &R::Domain, b: &R::Domain) -> i32 {
+    type Domain = R::Domain;
+    fn call(&self, a: &Self::Domain, b: &Self::Domain) -> i32 {
         if self.r.call(a, b) {
             return 1;
         }
@@ -3124,7 +3114,7 @@ where
     }
 }
 
-pub fn lexicographical_compare_3way<I0, I1, F, R>(
+pub fn lexicographical_compare_3way<I0, I1, F>(
     mut f0: I0,
     l0: &I0,
     mut f1: I1,
@@ -3134,8 +3124,7 @@ pub fn lexicographical_compare_3way<I0, I1, F, R>(
 where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
-    F: Compare3Way<I0::ValueType>,
-    R: Relation<Domain = I0::ValueType>,
+    F: Compare3Way<Domain = I0::ValueType>,
     I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
@@ -3165,7 +3154,7 @@ pub fn bifurcate_compare_nonempty<C0, C1, F>(c0: &C0, c1: &C1, comp: &F) -> i32
 where
     C0: Readable + BifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BifurcateCoordinate,
-    F: Compare3Way<C0::ValueType>,
+    F: Compare3Way<Domain = C0::ValueType>,
     C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
