@@ -3124,7 +3124,7 @@ where
     }
 }
 
-pub fn lexicographical_compare_3way<I0, I1, F, R, Domain>(
+pub fn lexicographical_compare_3way<I0, I1, F, R>(
     mut f0: I0,
     l0: &I0,
     mut f1: I1,
@@ -3132,11 +3132,11 @@ pub fn lexicographical_compare_3way<I0, I1, F, R, Domain>(
     comp: &F,
 ) -> i32
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    F: Compare3Way<Domain>,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    F: Compare3Way<I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -3161,12 +3161,12 @@ where
     }
 }
 
-pub fn bifurcate_compare_nonempty<C0, C1, F, Domain>(c0: &C0, c1: &C1, comp: &F) -> i32
+pub fn bifurcate_compare_nonempty<C0, C1, F>(c0: &C0, c1: &C1, comp: &F) -> i32
 where
-    C0: Readable<ValueType = Domain> + BifurcateCoordinate,
-    C1: Readable<ValueType = Domain> + BifurcateCoordinate,
-    F: Compare3Way<Domain>,
-    Domain: Regular,
+    C0: Readable + BifurcateCoordinate,
+    C1: Readable<ValueType = C0::ValueType> + BifurcateCoordinate,
+    F: Compare3Way<C0::ValueType>,
+    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
