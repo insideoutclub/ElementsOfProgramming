@@ -61,35 +61,63 @@ pub fn square(n: i32) -> i32 {
     n * n
 }
 
-pub trait BinaryOperation<Domain> {
-    fn call(&self, x: &Domain, y: &Domain) -> Domain;
+pub trait BinaryOperation {
+    type Domain: Regular;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
 }
 
-impl<Domain, T> BinaryOperation<Domain> for T
+pub struct BinaryOperationWrapper<Domain, Op>
 where
-    T: Fn(&Domain, &Domain) -> Domain,
+    Op: Fn(&Domain, &Domain) -> Domain,
 {
-    fn call(&self, x: &Domain, y: &Domain) -> Domain {
-        self(x, y)
+    op: Op,
+    marker: PhantomData<Domain>,
+}
+
+impl<Domain, Op> BinaryOperationWrapper<Domain, Op>
+where
+    Op: Fn(&Domain, &Domain) -> Domain,
+{
+    pub fn new(op: Op) -> Self {
+        Self {
+            op,
+            marker: PhantomData,
+        }
     }
 }
 
-pub fn square_1<Domain, Op>(x: &Domain, op: &Op) -> Domain
+impl<Domain, Op> BinaryOperation for BinaryOperationWrapper<Domain, Op>
 where
-    Op: BinaryOperation<Domain>,
+    Domain: Regular,
+    Op: Fn(&Domain, &Domain) -> Domain,
+{
+    type Domain = Domain;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain {
+        (self.op)(x, y)
+    }
+}
+
+pub fn square_1<Op>(x: &Op::Domain, op: &Op) -> Op::Domain
+where
+    Op: BinaryOperation,
 {
     op.call(x, x)
 }
 
 // Function object for equality
 
-#[derive(Default)]
-pub struct Equal<T>(PhantomData<T>)
-where
-    T: Regular;
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct Equal<T>(PhantomData<T>);
 
 pub trait Procedure {
     type InputType;
+}
+
+impl<T> Regular for Equal<T>
+where
+    T: Clone + Default + Eq,
+{
+    type UnderlyingType = PhantomData<T>;
 }
 
 impl<T> Relation for Equal<T>
@@ -102,10 +130,7 @@ where
     }
 }
 
-impl<T> Procedure for (Equal<T>, Z0)
-where
-    T: Regular,
-{
+impl<T> Procedure for (Equal<T>, Z0) {
     type InputType = T;
 }
 
@@ -200,7 +225,7 @@ pub fn euclidean_norm_3(x: f64, y: f64, z: f64) -> f64 {
 } // ternary operation
 
 pub trait Transformation {
-    type Domain;
+    type Domain: Regular;
     type DistanceType: Integer;
     fn call(&self, x: Self::Domain) -> Self::Domain;
 }
@@ -222,7 +247,6 @@ where
 pub fn distance<F>(mut x: F::Domain, y: &F::Domain, f: &F) -> F::DistanceType
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     // Precondition: $y$ is reachable from $x$ under $f$
     let mut n = F::DistanceType::zero();
@@ -242,7 +266,6 @@ pub fn collision_point<F, P>(x: F::Domain, f: &F, p: &P) -> F::Domain
 where
     F: Transformation,
     P: UnaryPredicate<Domain = F::Domain>,
-    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     if !p.call(&x) {
@@ -272,7 +295,6 @@ pub fn terminating<F, P>(x: F::Domain, f: &F, p: &P) -> bool
 where
     F: Transformation,
     P: UnaryPredicate<Domain = F::Domain>,
-    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     !p.call(&collision_point(x, f, p))
@@ -281,7 +303,6 @@ where
 pub fn collision_point_nonterminating_orbit<F>(x: F::Domain, f: &F) -> F::Domain
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     let mut slow = x.clone(); // $slow = f^0(x)$
     let mut fast = f.call(x); // $fast = f^1(x)$
@@ -300,7 +321,6 @@ where
 pub fn circular_nonterminating_orbit<F>(x: &F::Domain, f: &F) -> bool
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     x == &f.call(collision_point_nonterminating_orbit(x.clone(), f))
 }
@@ -309,7 +329,6 @@ pub fn circular<F, P>(x: &F::Domain, f: &F, p: &P) -> bool
 where
     F: Transformation,
     P: UnaryPredicate<Domain = F::Domain>,
-    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
@@ -319,7 +338,6 @@ where
 pub fn convergent_point<F>(mut x0: F::Domain, mut x1: F::Domain, f: &F) -> F::Domain
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     // Precondition: $(\exists n \in \func{DistanceType}(F))\,n \geq 0 \wedge f^n(x0) = f^n(x1)$
     while x0 != x1 {
@@ -332,7 +350,6 @@ where
 pub fn connection_point_nonterminating_orbit<F>(x: F::Domain, f: &F) -> F::Domain
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     convergent_point(
         x.clone(),
@@ -345,7 +362,6 @@ pub fn connection_point<F, P>(x: F::Domain, f: &F, p: &P) -> F::Domain
 where
     F: Transformation,
     P: UnaryPredicate<Domain = F::Domain>,
-    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = collision_point(x.clone(), f, p);
@@ -365,7 +381,6 @@ pub fn convergent_point_guarded<F>(
 ) -> F::Domain
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     // Precondition: $\func{reachable}(x0, y, f) \wedge \func{reachable}(x1, y, f)$
     let d0 = distance(x0.clone(), y, f);
@@ -384,7 +399,6 @@ pub fn orbit_structure_nonterminating_orbit<F>(
 ) -> Triple<F::DistanceType, F::DistanceType, F::Domain>
 where
     F: Transformation,
-    F::Domain: Regular,
 {
     let y = connection_point_nonterminating_orbit(x.clone(), f);
     Triple::new(distance(x, &y, f), distance(f.call(y.clone()), &y, f), y)
@@ -398,7 +412,6 @@ pub fn orbit_structure<F, P>(
 where
     F: Transformation,
     P: UnaryPredicate<Domain = F::Domain>,
-    F::Domain: Regular,
 {
     // Precondition: $p(x) \Leftrightarrow \text{$f(x)$ is defined}$
     let y = connection_point(x.clone(), f, p);
@@ -416,11 +429,10 @@ where
 //  Chapter 3. Associative operations
 //
 
-pub fn power_left_associated<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_left_associated<I, Op>(a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    Op: BinaryOperation,
 {
     // Precondition: $n > 0$
     if n == I::one() {
@@ -429,11 +441,10 @@ where
     op.call(&power_left_associated(a.clone(), n - I::one(), op), &a)
 }
 
-pub fn power_right_associated<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_right_associated<I, Op>(a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    Op: BinaryOperation,
 {
     // Precondition: $n > 0$
     if n == I::one() {
@@ -442,10 +453,10 @@ where
     op.call(&a.clone(), &power_right_associated(a, n - I::one(), op))
 }
 
-pub fn power_0<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_0<I, Op>(a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     if n == I::one() {
@@ -457,10 +468,10 @@ where
     op.call(&power_0(op.call(&a, &a), n / I::two(), op), &a)
 }
 
-pub fn power_1<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_1<I, Op>(a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     if n == I::one() {
@@ -473,10 +484,10 @@ where
     r
 }
 
-pub fn power_accumulate_0<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_0<I, Op>(mut r: Op::Domain, a: &Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n == I::zero() {
@@ -488,10 +499,10 @@ where
     power_accumulate_0(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_1<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_1<I, Op>(mut r: Op::Domain, a: &Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n == I::zero() {
@@ -506,10 +517,10 @@ where
     power_accumulate_1(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_2<I, Op, Domain>(mut r: Domain, a: &Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_2<I, Op>(mut r: Op::Domain, a: &Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n.clone() % I::two() != I::zero() {
@@ -523,10 +534,15 @@ where
     power_accumulate_2(r, &op.call(a, a), n / I::two(), op)
 }
 
-pub fn power_accumulate_3<I, Op, Domain>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_accumulate_3<I, Op>(
+    mut r: Op::Domain,
+    mut a: Op::Domain,
+    mut n: I,
+    op: &Op,
+) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n.clone() % I::two() != I::zero() {
@@ -542,10 +558,15 @@ where
     power_accumulate_3(r, a, n, op)
 }
 
-pub fn power_accumulate_4<I, Op, Domain>(mut r: Domain, mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_accumulate_4<I, Op>(
+    mut r: Op::Domain,
+    mut a: Op::Domain,
+    mut n: I,
+    op: &Op,
+) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     loop {
@@ -562,15 +583,15 @@ where
     }
 }
 
-pub fn power_accumulate_positive_0<I, Op, Domain>(
-    mut r: Domain,
-    mut a: Domain,
+pub fn power_accumulate_positive_0<I, Op>(
+    mut r: Op::Domain,
+    mut a: Op::Domain,
     mut n: I,
     op: &Op,
-) -> Domain
+) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     loop {
@@ -585,10 +606,10 @@ where
     }
 }
 
-pub fn power_accumulate_5<I, Op, Domain>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate_5<I, Op>(r: Op::Domain, a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n \geq 0$
     if n == I::zero() {
@@ -597,20 +618,19 @@ where
     power_accumulate_positive_0(r, a, n, op)
 }
 
-pub fn power_2<I, Op, Domain>(a: Domain, n: I, op: &Op) -> Domain
+pub fn power_2<I, Op>(a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     power_accumulate_5(a.clone(), a, n - I::one(), op)
 }
 
-pub fn power_3<I, Op, Domain>(mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power_3<I, Op>(mut a: Op::Domain, mut n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge n > 0$
     while n.clone() % I::two() == I::zero() {
@@ -625,15 +645,15 @@ where
     power_accumulate_positive_0(a, op_a_a, n, op)
 }
 
-pub fn power_accumulate_positive<I, Op, Domain>(
-    mut r: Domain,
-    mut a: Domain,
+pub fn power_accumulate_positive<I, Op>(
+    mut r: Op::Domain,
+    mut a: Op::Domain,
     mut n: I,
     op: &Op,
-) -> Domain
+) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
     loop {
@@ -648,10 +668,10 @@ where
     }
 }
 
-pub fn power_accumulate<I, Op, Domain>(r: Domain, a: Domain, n: I, op: &Op) -> Domain
+pub fn power_accumulate<I, Op>(r: Op::Domain, a: Op::Domain, n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge \neg \func{negative}(n)$
     if zero(&n) {
@@ -660,10 +680,10 @@ where
     power_accumulate_positive(r, a, n, op)
 }
 
-pub fn power<I, Op, Domain>(mut a: Domain, mut n: I, op: &Op) -> Domain
+pub fn power<I, Op>(mut a: Op::Domain, mut n: I, op: &Op) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge \func{positive}(n)$
     while even(n.clone()) {
@@ -678,10 +698,10 @@ where
     power_accumulate_positive(a, op_a_a, n, op)
 }
 
-pub fn power_4<I, Op, Domain>(a: Domain, n: I, op: &Op, id: Domain) -> Domain
+pub fn power_4<I, Op>(a: Op::Domain, n: I, op: &Op, id: Op::Domain) -> Op::Domain
 where
     I: Integer,
-    Op: BinaryOperation<Domain>,
+    Op: BinaryOperation,
 {
     // Precondition: $\func{associative}(op) \wedge \neg \func{negative}(n)$
     if zero(&n) {
@@ -703,6 +723,7 @@ where
 pub fn fibonacci<I>(n: I) -> I
 where
     I: Integer,
+    I::UnderlyingType: Regular,
 {
     // Precondition: $n \geq 0$
     if n == I::zero() {
@@ -711,7 +732,7 @@ where
     power(
         Pair::new(I::one(), I::zero()),
         n,
-        &fibonacci_matrix_multiply,
+        &BinaryOperationWrapper::new(fibonacci_matrix_multiply),
     )
     .m0
 }
@@ -724,11 +745,12 @@ where
 // Exercise 4.2: Give an example of a symmetric relation that is not transitive
 // Exercise 4.3: Give an example of a symmetric relation that is not reflexive
 
-pub trait Relation {
+pub trait Relation: Regular {
     type Domain;
     fn call(&self, x: &Self::Domain, y: &Self::Domain) -> bool;
 }
 
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct Complement<R>
 where
     R: Relation,
@@ -743,6 +765,13 @@ where
     fn _new(r: R) -> Self {
         Self { r }
     }
+}
+
+impl<R> Regular for Complement<R>
+where
+    R: Relation,
+{
+    type UnderlyingType = ();
 }
 
 impl<R> Relation for Complement<R>
@@ -762,20 +791,22 @@ where
     type InputType = R::Domain;
 }
 
-pub struct Converse<R>
-where
-    R: Relation,
-{
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct Converse<R> {
     r: R,
 }
 
-impl<R> Converse<R>
-where
-    R: Relation,
-{
+impl<R> Converse<R> {
     fn _new(r: R) -> Self {
         Self { r }
     }
+}
+
+impl<R> Regular for Converse<R>
+where
+    R: Relation,
+{
+    type UnderlyingType = ();
 }
 
 impl<R> Relation for Converse<R>
@@ -795,20 +826,22 @@ where
     type InputType = R::Domain;
 }
 
-pub struct ComplementOfConverse<R>
-where
-    R: Relation,
-{
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct ComplementOfConverse<R> {
     r: R,
 }
 
-impl<R> ComplementOfConverse<R>
-where
-    R: Relation,
-{
+impl<R> ComplementOfConverse<R> {
     pub fn new(r: R) -> Self {
         Self { r }
     }
+}
+
+impl<R> Regular for ComplementOfConverse<R>
+where
+    R: Relation,
+{
+    type UnderlyingType = ();
 }
 
 impl<R> Relation for ComplementOfConverse<R>
@@ -828,20 +861,22 @@ where
     type InputType = R::Domain;
 }
 
-pub struct SymmetricComplement<R>
-where
-    R: Relation,
-{
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct SymmetricComplement<R> {
     r: R,
 }
 
-impl<R> SymmetricComplement<R>
-where
-    R: Relation,
-{
+impl<R> SymmetricComplement<R> {
     fn _new(r: R) -> Self {
         SymmetricComplement { r }
     }
+}
+
+impl<R> Regular for SymmetricComplement<R>
+where
+    R: Relation,
+{
+    type UnderlyingType = ();
 }
 
 impl<R> Relation for SymmetricComplement<R>
@@ -1255,14 +1290,19 @@ where
 
 // Natural total ordering
 
-#[derive(Default)]
-pub struct Less<T>(PhantomData<T>)
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
+pub struct Less<T>(PhantomData<T>);
+
+impl<T> Regular for Less<T>
 where
-    T: TotallyOrdered;
+    T: Regular,
+{
+    type UnderlyingType = ();
+}
 
 impl<T> Relation for Less<T>
 where
-    T: TotallyOrdered,
+    T: Regular + TotallyOrdered,
 {
     type Domain = T;
     fn call(&self, x: &T, y: &T) -> bool {
@@ -1337,10 +1377,11 @@ pub trait AdditiveSemigroup: Regular {
 #[derive(Default)]
 pub struct Plus<T>(PhantomData<T>);
 
-impl<T> BinaryOperation<T> for Plus<T>
+impl<T> BinaryOperation for Plus<T>
 where
     T: AdditiveSemigroup,
 {
+    type Domain = T;
     fn call(&self, x: &T, y: &T) -> T {
         x.add(y)
     }
@@ -1353,17 +1394,18 @@ where
     type InputType = T;
 }
 
-pub trait MultiplicativeSemigroup {
+pub trait MultiplicativeSemigroup: Regular {
     fn mul(&self, y: &Self) -> Self;
 }
 
 #[derive(Default)]
 pub struct Multiplies<T>(PhantomData<T>);
 
-impl<T> BinaryOperation<T> for Multiplies<T>
+impl<T> BinaryOperation for Multiplies<T>
 where
     T: MultiplicativeSemigroup,
 {
+    type Domain = T;
     fn call(&self, x: &T, y: &T) -> T {
         x.mul(y)
     }
@@ -1373,34 +1415,34 @@ impl<T> Procedure for (Multiplies<T>, Z0) {
     type InputType = T;
 }
 
-pub trait SemigroupOperation<Domain>: BinaryOperation<Domain> {}
-impl<T, Domain> SemigroupOperation<Domain> for T where T: BinaryOperation<Domain> {}
+pub trait SemigroupOperation: BinaryOperation {}
+impl<T> SemigroupOperation for T where T: BinaryOperation {}
 
-pub struct MultipliesTransformation<Op, Domain>
+pub struct MultipliesTransformation<Op>
 where
-    Op: SemigroupOperation<Domain>,
+    Op: SemigroupOperation,
 {
-    x: Domain,
+    x: Op::Domain,
     op: Op,
 }
 
-impl<Op, Domain> MultipliesTransformation<Op, Domain>
+impl<Op> MultipliesTransformation<Op>
 where
-    Op: SemigroupOperation<Domain>,
+    Op: SemigroupOperation,
 {
-    pub fn new(x: Domain, op: Op) -> Self {
+    pub fn new(x: Op::Domain, op: Op) -> Self {
         Self { x, op }
     }
-    pub fn call(&self, y: &Domain) -> Domain {
+    pub fn call(&self, y: &Op::Domain) -> Op::Domain {
         self.op.call(&self.x, y)
     }
 }
 
-impl<Op, Domain> Procedure for (MultipliesTransformation<Op, Domain>, Z0)
+impl<Op> Procedure for (MultipliesTransformation<Op>, Z0)
 where
-    Op: SemigroupOperation<Domain>,
+    Op: SemigroupOperation,
 {
-    type InputType = Domain;
+    type InputType = Op::Domain;
 }
 
 pub trait AdditiveMonoid: AdditiveSemigroup {
@@ -1786,25 +1828,25 @@ where
 
 pub trait ArchimedeanGroup: ArchimedeanMonoid + AdditiveGroup {}
 
-pub fn remainder<Domain, Op>(a: &Domain, b: &Domain, rem: &Op) -> Domain
+pub fn remainder<Op>(a: &Op::Domain, b: &Op::Domain, rem: &Op) -> Op::Domain
 where
-    Op: BinaryOperation<Domain>,
-    Domain: ArchimedeanGroup,
+    Op: BinaryOperation,
+    Op::Domain: ArchimedeanGroup,
 {
     // Precondition: $b \neq 0$
     let mut r;
-    if *a < Domain::zero() {
-        if *b < Domain::zero() {
+    if *a < Op::Domain::zero() {
+        if *b < Op::Domain::zero() {
             r = rem.call(&a.neg(), &b.neg()).neg();
         } else {
             r = rem.call(&a.neg(), &b);
-            if r != Domain::zero() {
+            if r != Op::Domain::zero() {
                 r = b.sub(&r);
             }
         }
-    } else if *b < Domain::zero() {
+    } else if *b < Op::Domain::zero() {
         r = rem.call(&a, &b.neg());
-        if r != Domain::zero() {
+        if r != Op::Domain::zero() {
             r = b.add(&r);
         }
     } else {
@@ -2091,12 +2133,11 @@ where
     count_if_not(f, l, p, I::DistanceType::zero())
 }
 
-pub fn reduce_nonempty<I, Op, F, Domain>(mut f: I, l: &I, op: &Op, fun: &F) -> Domain
+pub fn reduce_nonempty<I, Op, F>(mut f: I, l: &I, op: &Op, fun: &F) -> Op::Domain
 where
     I: Iterator,
-    Op: BinaryOperation<Domain>,
-    F: Fn(&I) -> &Domain,
-    Domain: Regular,
+    Op: BinaryOperation,
+    F: Fn(&I) -> &Op::Domain,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge f \neq l$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2110,11 +2151,10 @@ where
     r
 }
 
-pub fn reduce_nonempty_1<I, Op, Domain>(mut f: I, l: &I, op: &Op) -> Domain
+pub fn reduce_nonempty_1<I, Op>(mut f: I, l: &I, op: &Op) -> Op::Domain
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    I: Readable<ValueType = Op::Domain> + Iterator,
+    Op: BinaryOperation,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l) \wedge f \neq l$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2127,12 +2167,11 @@ where
     r
 }
 
-pub fn reduce<I, Op, F, Domain>(f: I, l: &I, op: &Op, fun: &F, z: &Domain) -> Domain
+pub fn reduce<I, Op, F>(f: I, l: &I, op: &Op, fun: &F, z: &Op::Domain) -> Op::Domain
 where
     I: Iterator,
-    Op: BinaryOperation<Domain>,
-    F: Fn(&I) -> &Domain,
-    Domain: Regular,
+    Op: BinaryOperation,
+    F: Fn(&I) -> &Op::Domain,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2143,11 +2182,10 @@ where
     reduce_nonempty(f, l, op, fun)
 }
 
-pub fn reduce_1<I, Op, Domain>(f: I, l: &I, op: &Op, z: &Domain) -> Domain
+pub fn reduce_1<I, Op>(f: I, l: &I, op: &Op, z: &Op::Domain) -> Op::Domain
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    I: Readable<ValueType = Op::Domain> + Iterator,
+    Op: BinaryOperation,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2157,12 +2195,11 @@ where
     reduce_nonempty_1(f, l, op)
 }
 
-pub fn reduce_nonzeroes<I, Op, F, Domain>(mut f: I, l: &I, op: &Op, fun: &F, z: &Domain) -> Domain
+pub fn reduce_nonzeroes<I, Op, F>(mut f: I, l: &I, op: &Op, fun: &F, z: &Op::Domain) -> Op::Domain
 where
     I: Iterator,
-    Op: BinaryOperation<Domain>,
-    F: Fn(&I) -> &Domain,
-    Domain: Regular,
+    Op: BinaryOperation,
+    F: Fn(&I) -> &Op::Domain,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2188,11 +2225,10 @@ where
     x
 }
 
-pub fn reduce_nonzeroes_1<I, Op, Domain>(mut f: I, l: &I, op: &Op, z: &Domain) -> Domain
+pub fn reduce_nonzeroes_1<I, Op>(mut f: I, l: &I, op: &Op, z: &Op::Domain) -> Op::Domain
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    Op: BinaryOperation<Domain>,
-    Domain: Regular,
+    I: Readable<ValueType = Op::Domain> + Iterator,
+    Op: BinaryOperation,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2264,7 +2300,6 @@ pub fn find_if_unguarded<I, P>(mut f: I, p: &P) -> I
 where
     I: Readable + Iterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists l)\,\func{readable\_bounded\_range}(f, l) \wedge \func{some}(f, l, p)$
@@ -2279,7 +2314,6 @@ pub fn find_if_not_unguarded<I, P>(mut f: I, p: &P) -> I
 where
     I: Readable + Iterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Let $l$ be the end of the implied range starting with $f$
     // Precondition:
@@ -2290,18 +2324,11 @@ where
     f
 }
 
-pub fn find_mismatch<I0, I1, R, Domain>(
-    mut f0: I0,
-    l0: &I0,
-    mut f1: I1,
-    l1: &I1,
-    r: &R,
-) -> Pair<I0, I1>
+pub fn find_mismatch<I0, I1, R>(mut f0: I0, l0: &I0, mut f1: I1, l1: &I1, r: &R) -> Pair<I0, I1>
 where
-    I0: Readable<ValueType = Domain> + Iterator,
-    I1: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    R: Relation<Domain = I0::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\func{readable\_bounded\_range}(f1, l1)$
@@ -2312,11 +2339,10 @@ where
     Pair::new(f0, f1)
 }
 
-pub fn find_adjacent_mismatch<I, R, Domain>(mut f: I, l: &I, r: &R) -> I
+pub fn find_adjacent_mismatch<I, R>(mut f: I, l: &I, r: &R) -> I
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     if f == *l {
@@ -2331,32 +2357,29 @@ where
     f
 }
 
-pub fn relation_preserving<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+pub fn relation_preserving<I, R>(f: I, l: &I, r: &R) -> bool
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_adjacent_mismatch(f, l, r)
 }
 
-pub fn strictly_increasing_range<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+pub fn strictly_increasing_range<I, R>(f: I, l: &I, r: &R) -> bool
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I: Readable + Iterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{weak\_ordering}(r)$
     relation_preserving(f, l, r)
 }
 
-pub fn increasing_range<I, R, Domain>(f: I, l: &I, r: &R) -> bool
+pub fn increasing_range<I, R>(f: I, l: &I, r: &R) -> bool
 where
-    I: Readable<ValueType = Domain> + Iterator,
-    R: Relation<Domain = Domain> + Regular,
-    Domain: Regular,
+    I: Readable + Iterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{weak\_ordering}(r)$
@@ -2367,7 +2390,6 @@ pub fn partitioned<I, P>(f: I, l: &I, p: &P) -> bool
 where
     I: Readable + Iterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     *l == find_if_not(find_if(f, l, p), l, p)
@@ -3250,10 +3272,20 @@ where
     bifurcate_compare(c0, c1, &Less::default())
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct AlwaysFalse<T>(PhantomData<T>);
 
-impl<T> Relation for AlwaysFalse<T> {
+impl<T> Regular for AlwaysFalse<T>
+where
+    T: Regular,
+{
+    type UnderlyingType = ();
+}
+
+impl<T> Relation for AlwaysFalse<T>
+where
+    T: Regular,
+{
     type Domain = T;
     #[must_use]
     fn call(&self, _: &T, _: &T) -> bool {
