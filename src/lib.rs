@@ -1855,39 +1855,47 @@ where
     r
 }
 
-pub fn quotient_remainder<Domain, F>(
-    a: &Domain,
-    b: &Domain,
+pub trait HomogeneousFunction {
+    type Domain: ArchimedeanGroup;
+    fn call(
+        &self,
+        a: &Self::Domain,
+        b: &Self::Domain,
+    ) -> Pair<<Self::Domain as ArchimedeanMonoid>::QuotientType, Self::Domain>;
+}
+
+pub fn quotient_remainder<F>(
+    a: &F::Domain,
+    b: &F::Domain,
     quo_rem: &F,
-) -> Pair<Domain::QuotientType, Domain>
+) -> Pair<<F::Domain as ArchimedeanMonoid>::QuotientType, F::Domain>
 where
-    F: Fn(&Domain, &Domain) -> Pair<Domain::QuotientType, Domain>,
-    Domain: ArchimedeanGroup,
-    Domain::QuotientType: AdditiveGroup,
+    F: HomogeneousFunction,
+    <F::Domain as ArchimedeanMonoid>::QuotientType: AdditiveGroup,
 {
     // Precondition: $b \neq 0$
     let mut q_r;
-    if *a < Domain::zero() {
-        if *b < Domain::zero() {
-            q_r = quo_rem(&a.neg(), &b.neg());
+    if *a < F::Domain::zero() {
+        if *b < F::Domain::zero() {
+            q_r = quo_rem.call(&a.neg(), &b.neg());
             q_r.m1 = q_r.m1.neg();
         } else {
-            q_r = quo_rem(&a.neg(), &b);
-            if q_r.m1 != Domain::zero() {
+            q_r = quo_rem.call(&a.neg(), &b);
+            if q_r.m1 != F::Domain::zero() {
                 q_r.m1 = b.sub(&q_r.m1);
                 q_r.m0 = successor(q_r.m0);
             }
             q_r.m0 = q_r.m0.neg();
         }
-    } else if *b < Domain::zero() {
-        q_r = quo_rem(&a, &b.neg());
+    } else if *b < F::Domain::zero() {
+        q_r = quo_rem.call(&a, &b.neg());
         if q_r.m1 != AdditiveMonoid::zero() {
             q_r.m1 = b.add(&q_r.m1);
             q_r.m0 = successor(q_r.m0);
         }
         q_r.m0 = q_r.m0.neg();
     } else {
-        q_r = quo_rem(a, b);
+        q_r = quo_rem.call(a, b);
     }
     q_r
 }
