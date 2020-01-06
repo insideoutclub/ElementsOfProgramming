@@ -3363,72 +3363,154 @@ struct iterator_type< bidirectional_linker<I> >
 {
     typedef I type;
 };
+*/
 
-template<typename I>
-    requires(ForwardIterator(I))
-void advance_tail(I& t, I& f)
+pub fn advance_tail<I>(t: &mut I, f: &mut I)
+where
+    I: ForwardIterator,
 {
     // Precondition: $\func{successor}(f)\text{ is defined}$
-    t = f;
-    f = successor(f);
+    *t = f.clone();
+    *f = f.successor();
 }
 
-template<typename S>
-    requires(ForwardLinker(S))
-struct linker_to_tail
+pub trait ForwardLinker {
+    type IteratorType: ForwardIterator;
+    fn call(&self, t: &mut Self::IteratorType, f: &mut Self::IteratorType);
+}
+
+pub struct LinkerToTail<S> {
+    set_link: S,
+}
+
+impl<S> LinkerToTail<S>
+where
+    S: ForwardLinker,
 {
-    typedef IteratorType(S) I;
-    S set_link;
-    linker_to_tail(const S& set_link) : set_link(set_link) { }
-    void operator()(I& t, I& f)
-    {
+    pub fn new(set_link: S) -> Self {
+        Self { set_link }
+    }
+    pub fn call(&self, t: &mut S::IteratorType, f: &mut S::IteratorType) {
         // Precondition: $\func{successor}(f)\text{ is defined}$
-        set_link(t, f);
+        self.set_link.call(t, f);
         advance_tail(t, f);
     }
-};
+}
 
-template<typename I>
-    requires(ForwardIterator(I))
-I find_last(I f, I l)
+pub fn find_last<I>(mut f: I, l: &I) -> I
+where
+    I: ForwardIterator,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge f \neq l$
-    I t;
-    do
-        advance_tail(t, f);
-    while (f != l);
-    return t;
+    let mut t = I::default();
+    loop {
+        advance_tail(&mut t, &mut f);
+        if f == *l {
+            break;
+        }
+    }
+    t
 }
 
-template<typename I, typename S, typename Pred>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        UnaryPseudoPredicate(Pred) && I == Domain(Pred))
-pair< pair<I, I>, pair<I, I> >
-split_linked(I f, I l, Pred p, S set_link)
+pub trait UnaryPseudoPredicate {
+    type Domain;
+    fn call(&mut self, x: &Self::Domain) -> bool;
+}
+
+enum State {
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+}
+use State::{S0, S1, S2, S3, S4};
+
+pub fn split_linked<I, S, Pred>(
+    mut f: I,
+    l: &I,
+    mut p: Pred,
+    set_link: S,
+) -> Pair<Pair<I, I>, Pair<I, I>>
+where
+    S: ForwardLinker<IteratorType = I>,
+    I: Iterator,
+    I::UnderlyingType: Regular,
+    Pred: UnaryPseudoPredicate<Domain = I>,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
-    typedef pair<I, I> P;
-    linker_to_tail<S> link_to_tail(set_link);
-    I h0 = l; I t0 = l;
-    I h1 = l; I t1 = l;
-    if (f == l)                              goto s4;
-    if (p(f)) { h1 = f; advance_tail(t1, f); goto s1; }
-    else      { h0 = f; advance_tail(t0, f); goto s0; }
-s0: if (f == l)                              goto s4;
-    if (p(f)) { h1 = f; advance_tail(t1, f); goto s3; }
-    else      {         advance_tail(t0, f); goto s0; }
-s1: if (f == l)                              goto s4;
-    if (p(f)) {         advance_tail(t1, f); goto s1; }
-    else      { h0 = f; advance_tail(t0, f); goto s2; }
-s2: if (f == l)                              goto s4;
-    if (p(f)) {         link_to_tail(t1, f); goto s3; }
-    else      {         advance_tail(t0, f); goto s2; }
-s3: if (f == l)                              goto s4;
-    if (p(f)) {         advance_tail(t1, f); goto s3; }
-    else      {         link_to_tail(t0, f); goto s2; }
-s4: return pair<P, P>(P(h0, t0), P(h1, t1));
+    let link_to_tail = LinkerToTail::new(set_link);
+    let mut h0 = l.clone();
+    let mut t0 = l.clone();
+    let mut h1 = l.clone();
+    let mut t1 = l.clone();
+    let mut state = if f == *l {
+        S4
+    } else if p.call(&f) {
+        h1 = f.clone();
+        advance_tail(&mut t1, &mut f);
+        S1
+    } else {
+        h0 = f.clone();
+        advance_tail(&mut t0, &mut f);
+        S0
+    };
+    loop {
+        state = match state {
+            S0 => {
+                if f == *l {
+                    S4
+                } else if p.call(&f) {
+                    h1 = f.clone();
+                    advance_tail(&mut t1, &mut f);
+                    S3
+                } else {
+                    advance_tail(&mut t0, &mut f);
+                    S0
+                }
+            }
+            S1 => {
+                if f == *l {
+                    S4
+                } else if p.call(&f) {
+                    advance_tail(&mut t1, &mut f);
+                    S1
+                } else {
+                    h0 = f.clone();
+                    advance_tail(&mut t0, &mut f);
+                    S2
+                }
+            }
+            S2 => {
+                if f == *l {
+                    S4
+                } else if p.call(&f) {
+                    link_to_tail.call(&mut t1, &mut f);
+                    S3
+                } else {
+                    advance_tail(&mut t0, &mut f);
+                    S2
+                }
+            }
+            S3 => {
+                if f == *l {
+                    S4
+                } else if p.call(&f) {
+                    advance_tail(&mut t1, &mut f);
+                    S3
+                } else {
+                    link_to_tail.call(&mut t0, &mut f);
+                    S2
+                }
+            }
+            S4 => {
+                return Pair::new(Pair::new(h0, t0), Pair::new(h1, t1));
+            }
+        }
+    }
 }
 
+/*
 // Exercise 8.1: Explain the postcondition of split_linked
 
 
