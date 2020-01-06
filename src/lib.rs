@@ -1929,7 +1929,7 @@ where
     *x = x.successor();
 }
 
-pub trait Readable {
+pub trait Readable: Regular {
     type ValueType: Regular;
     fn source(&self) -> &Self::ValueType;
 }
@@ -3512,8 +3512,9 @@ where
 // Exercise 8.1: Explain the postcondition of split_linked
 
 pub trait PseudoRelation: Regular {
-    type Domain;
-    fn call(&mut self, x: &Self::Domain, y: &Self::Domain) -> bool;
+    type Domain0;
+    type Domain1;
+    fn call(&mut self, x: &Self::Domain0, y: &Self::Domain1) -> bool;
 }
 
 enum CombineLinkedNonemptyState {
@@ -3534,7 +3535,7 @@ pub fn combine_linked_nonempty<I, S, R>(
 where
     I: Iterator,
     S: ForwardLinker<IteratorType = I>,
-    R: PseudoRelation<Domain = I>,
+    R: PseudoRelation<Domain0 = I, Domain1 = I>,
 {
     // Precondition: $\property{bounded\_range}(f0, l0) \wedge
     //                \property{bounded\_range}(f1, l1)$
@@ -3665,154 +3666,251 @@ where
     split_linked(f, l, ps, set_link)
 }
 
-/*
-template<typename I0, typename I1, typename R>
-    requires(Readable(I0) && Readable(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Relation(R) && ValueType(I0) == Domain(R))
-struct relation_source
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
 {
-    R r;
-    relation_source(const R& r) : r(r) { }
-    bool operator()(I0 i0, I1 i1)
-    {
-        return r(source(i0), source(i1));
-    }
-};
+    r: R,
+    marker: PhantomData<(I0, I1)>,
+}
 
-template<typename I, typename S, typename R>
-    requires(Readable(I) &&
-        ForwardLinker(S) && I == IteratorType(S) &&
-        Relation(R) && ValueType(I) == Domain(R))
-pair<I, I> merge_linked_nonempty(I f0, I l0, I f1, I l1,
-                                 R r, S set_link)
+impl<I0, I1, R> RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    pub fn new(r: R) -> Self {
+        Self {
+            r,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<I0, I1, R> Regular for RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    type UnderlyingType = ();
+}
+
+impl<I0, I1, R> PseudoRelation for RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    type Domain0 = I0;
+    type Domain1 = I1;
+    fn call(&mut self, i0: &I0, i1: &I1) -> bool {
+        self.r.call(i0.source(), i1.source())
+    }
+}
+
+pub fn merge_linked_nonempty<I, S, R>(
+    f0: I,
+    l0: I,
+    f1: I,
+    mut l1: I,
+    r: R,
+    set_link: &S,
+) -> Pair<I, I>
+where
+    I: Readable + ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $f0 \neq l0 \wedge f1 \neq l1$
     // Precondition: $\property{increasing\_range}(f0, l0, r)$
     // Precondition: $\property{increasing\_range}(f1, l1, r)$
-    relation_source<I, I, R> rs(r);
-    triple<I, I, I> t = combine_linked_nonempty(f0, l0, f1, l1,
-                                                rs, set_link);
-    set_link(find_last(t.m1, t.m2), l1);
-    return pair<I, I>(t.m0, l1);
+    let rs = RelationSource::new(r);
+    let t = combine_linked_nonempty(f0, l0, f1, l1.clone(), rs, set_link);
+    set_link.call(&mut find_last(t.m1, &t.m2), &mut l1);
+    Pair::new(t.m0, l1)
 }
 
-template<typename I, typename S, typename R>
-    requires(Readable(I) &&
-        ForwardLinker(S) && I == IteratorType(S) &&
-        Relation(R) && ValueType(I) == Domain(R))
-pair<I, I> sort_linked_nonempty_n(I f, DistanceType(I) n,
-                                  R r, S set_link)
+pub fn sort_linked_nonempty_n<I, S, R>(f: I, n: I::DistanceType, r: R, set_link: &S) -> Pair<I, I>
+where
+    I: Readable + ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{counted\_range}(f, n) \wedge
     //                n > 0 \wedge \func{weak\_ordering}(r)$
-    typedef DistanceType(I) N;
-    typedef pair<I, I> P;
-    if (n == N(1)) return P(f, successor(f));
-    N h = half_nonnegative(n);
-    P p0 = sort_linked_nonempty_n(f, h, r, set_link);
-    P p1 = sort_linked_nonempty_n(p0.m1, n - h, r, set_link);
-    return merge_linked_nonempty(p0.m0, p0.m1,
-                                 p1.m0, p1.m1, r, set_link);
+    if n == I::DistanceType::one() {
+        return Pair::new(f.clone(), f.successor());
+    }
+    let h = half_nonnegative(n.clone());
+    let p0 = sort_linked_nonempty_n(f, h.clone(), r.clone(), set_link);
+    let p1 = sort_linked_nonempty_n(p0.m1.clone(), n - h, r.clone(), set_link);
+    merge_linked_nonempty(p0.m0, p0.m1, p1.m0, p1.m1, r, set_link)
 }
 
 // Exercise 8.3: Complexity of sort_linked_nonempty_n
 
-
 // Exercise 8.4: unique
 
-
-template<typename C>
-     requires(EmptyLinkedBifurcateCoordinate(C))
-void tree_rotate(C& curr, C& prev)
-{
-    // Precondition: $\neg \func{empty}(curr)$
-    C tmp = left_successor(curr);
-    set_left_successor(curr, right_successor(curr));
-    set_right_successor(curr, prev);
-    if (empty(tmp)) { prev = tmp; return; }
-    prev = curr;
-    curr = tmp;
+pub trait LinkedBifurcateCoordinate: BifurcateCoordinate {
+    fn set_left_successor(&mut self, x: &mut Self);
+    fn set_right_successor(&mut self, x: &mut Self);
 }
 
-template<typename C, typename Proc>
-    requires(EmptyLinkedBifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        C == InputType(Proc, 0))
-Proc traverse_rotating(C c, Proc proc)
+pub trait EmptyLinkedBifurcateCoordinate: LinkedBifurcateCoordinate {}
+
+pub fn tree_rotate<C>(curr: &mut C, mut prev: &mut C)
+where
+    C: EmptyLinkedBifurcateCoordinate,
+{
+    // Precondition: $\neg \func{empty}(curr)$
+    let tmp = curr.left_successor();
+    curr.set_left_successor(&mut curr.right_successor());
+    curr.set_right_successor(&mut prev);
+    if tmp.empty() {
+        *prev = tmp;
+        return;
+    }
+    *prev = curr.clone();
+    *curr = tmp;
+}
+
+pub trait UnaryProcedure {
+    type Domain;
+    fn call(&mut self, x: &Self::Domain);
+}
+
+pub fn traverse_rotating<C, Proc>(c: &C, mut proc: Proc) -> Proc
+where
+    C: EmptyLinkedBifurcateCoordinate,
+    Proc: UnaryProcedure<Domain = C>,
 {
     // Precondition: $\property{tree}(c)$
-    if (empty(c)) return proc;
-    C curr = c;
-    C prev;
-    do {
-        proc(curr);
-        tree_rotate(curr, prev);
-    } while (curr != c);
-    do {
-        proc(curr);
-        tree_rotate(curr, prev);
-    } while (curr != c);
-    proc(curr);
-    tree_rotate(curr, prev);
-    return proc;
+    if c.empty() {
+        return proc;
+    }
+    let mut curr = c.clone();
+    let mut prev = C::default();
+    loop {
+        proc.call(&curr);
+        tree_rotate(&mut curr, &mut prev);
+        if curr == *c {
+            break;
+        }
+    }
+    loop {
+        proc.call(&curr);
+        tree_rotate(&mut curr, &mut prev);
+        if curr == *c {
+            break;
+        }
+    }
+    proc.call(&curr);
+    tree_rotate(&mut curr, &mut prev);
+    proc
 }
 
 // Exercise 8.5: Diagram each state of traverse_rotating
 // for a complete binary tree with 7 nodes
 
-
-template<typename T, typename N>
-    requires(Integer(N))
-struct counter
+#[derive(Default)]
+pub struct Counter<T, N>
+where
+    N: Integer,
 {
-    N n;
-    counter() : n(0) { }
-    counter(N n) : n(n) { }
-    void operator()(const T&) { n = successor(n); }
-};
+    n: N,
+    marker: PhantomData<T>,
+}
 
-template<typename C>
-    requires(EmptyLinkedBifurcateCoordinate(C))
-WeightType(C) weight_rotating(C c)
+impl<T, N> Counter<T, N>
+where
+    N: Integer,
+{
+    pub fn new(n: N) -> Self {
+        Self {
+            n,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T, N> UnaryProcedure for Counter<T, N>
+where
+    N: Integer,
+{
+    type Domain = T;
+    fn call(&mut self, _: &T) {
+        self.n = successor(self.n.clone());
+    }
+}
+
+pub fn weight_rotating<C>(c: &C) -> C::WeightType
+where
+    C: EmptyLinkedBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    return traverse_rotating(c, counter<C, N>()).n / N(3);
+    traverse_rotating(c, Counter::<C, C::WeightType>::default()).n / NumCast::from(3).unwrap()
 }
 
-template<typename N, typename Proc>
-    requires(Integer(N) &&
-        Procedure(Proc) && Arity(Proc) == 1)
-struct phased_applicator
+pub struct PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
 {
-    N period;
-    N phase;
-    N n;
+    period: N,
+    phase: N,
+    n: N,
     // Invariant: $n, phase \in [0, period)$
-    Proc proc;
-    phased_applicator(N period, N phase, N n, Proc proc) :
-        period(period), phase(phase), n(n), proc(proc) { }
-    void operator()(InputType(Proc, 0) x)
-    {
-        if (n == phase) proc(x);
-        n = successor(n);
-        if (n == period) n = 0;
-    }
-};
+    proc: Proc,
+}
 
-template<typename C, typename Proc>
-    requires(EmptyLinkedBifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        C == InputType(Proc, 0))
-Proc traverse_phased_rotating(C c, int phase, Proc proc)
+impl<N, Proc> PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
+{
+    pub fn new(period: N, phase: N, n: N, proc: Proc) -> Self {
+        Self {
+            period,
+            phase,
+            n,
+            proc,
+        }
+    }
+}
+
+impl<N, Proc> UnaryProcedure for PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
+{
+    type Domain = Proc::Domain;
+    fn call(&mut self, x: &Self::Domain) {
+        if self.n == self.phase {
+            self.proc.call(x);
+        }
+        self.n = successor(self.n.clone());
+        if self.n == self.period {
+            self.n = N::zero();
+        }
+    }
+}
+
+pub fn traverse_phased_rotating<C, Proc>(c: &C, phase: i32, proc: Proc) -> Proc
+where
+    C: EmptyLinkedBifurcateCoordinate,
+    Proc: UnaryProcedure<Domain = C>,
 {
     // Precondition: $\property{tree}(c) \wedge 0 \leq phase < 3$
-    phased_applicator<int, Proc> applicator(3, phase, 0, proc);
-    return traverse_rotating(c, applicator).proc;
+    let applicator = PhasedApplicator::<i32, Proc>::new(3, phase, 0, proc);
+    traverse_rotating(c, applicator).proc
 }
 
-
+/*
 //
 //  Chapter 9. Copying
 //
