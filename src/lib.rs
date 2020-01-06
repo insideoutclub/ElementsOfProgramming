@@ -3374,7 +3374,7 @@ where
     *f = f.successor();
 }
 
-pub trait ForwardLinker {
+pub trait ForwardLinker: Regular {
     type IteratorType: ForwardIterator;
     fn call(&self, t: &mut Self::IteratorType, f: &mut Self::IteratorType);
 }
@@ -3417,14 +3417,13 @@ pub trait UnaryPseudoPredicate {
     fn call(&mut self, x: &Self::Domain) -> bool;
 }
 
-enum State {
+enum SplitLinkedState {
     S0,
     S1,
     S2,
     S3,
     S4,
 }
-use State::{S0, S1, S2, S3, S4};
 
 pub fn split_linked<I, S, Pred>(
     mut f: I,
@@ -3445,153 +3444,228 @@ where
     let mut h1 = l.clone();
     let mut t1 = l.clone();
     let mut state = if f == *l {
-        S4
+        SplitLinkedState::S4
     } else if p.call(&f) {
         h1 = f.clone();
         advance_tail(&mut t1, &mut f);
-        S1
+        SplitLinkedState::S1
     } else {
         h0 = f.clone();
         advance_tail(&mut t0, &mut f);
-        S0
+        SplitLinkedState::S0
     };
     loop {
         state = match state {
-            S0 => {
+            SplitLinkedState::S0 => {
                 if f == *l {
-                    S4
+                    SplitLinkedState::S4
                 } else if p.call(&f) {
                     h1 = f.clone();
                     advance_tail(&mut t1, &mut f);
-                    S3
+                    SplitLinkedState::S3
                 } else {
                     advance_tail(&mut t0, &mut f);
-                    S0
+                    SplitLinkedState::S0
                 }
             }
-            S1 => {
+            SplitLinkedState::S1 => {
                 if f == *l {
-                    S4
+                    SplitLinkedState::S4
                 } else if p.call(&f) {
                     advance_tail(&mut t1, &mut f);
-                    S1
+                    SplitLinkedState::S1
                 } else {
                     h0 = f.clone();
                     advance_tail(&mut t0, &mut f);
-                    S2
+                    SplitLinkedState::S2
                 }
             }
-            S2 => {
+            SplitLinkedState::S2 => {
                 if f == *l {
-                    S4
+                    SplitLinkedState::S4
                 } else if p.call(&f) {
                     link_to_tail.call(&mut t1, &mut f);
-                    S3
+                    SplitLinkedState::S3
                 } else {
                     advance_tail(&mut t0, &mut f);
-                    S2
+                    SplitLinkedState::S2
                 }
             }
-            S3 => {
+            SplitLinkedState::S3 => {
                 if f == *l {
-                    S4
+                    SplitLinkedState::S4
                 } else if p.call(&f) {
                     advance_tail(&mut t1, &mut f);
-                    S3
+                    SplitLinkedState::S3
                 } else {
                     link_to_tail.call(&mut t0, &mut f);
-                    S2
+                    SplitLinkedState::S2
                 }
             }
-            S4 => {
+            SplitLinkedState::S4 => {
                 return Pair::new(Pair::new(h0, t0), Pair::new(h1, t1));
             }
         }
     }
 }
 
-/*
 // Exercise 8.1: Explain the postcondition of split_linked
 
+pub trait PseudoRelation: Regular {
+    type Domain;
+    fn call(&mut self, x: &Self::Domain, y: &Self::Domain) -> bool;
+}
 
-template<typename I, typename S, typename R>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        PseudoRelation(R) && I == Domain(R))
-triple<I, I, I>
-combine_linked_nonempty(I f0, I l0, I f1, I l1, R r, S set_link)
+enum CombineLinkedNonemptyState {
+    S0,
+    S1,
+    S2,
+    S3,
+}
+
+pub fn combine_linked_nonempty<I, S, R>(
+    mut f0: I,
+    l0: I,
+    mut f1: I,
+    l1: I,
+    mut r: R,
+    set_link: &S,
+) -> Triple<I, I, I>
+where
+    I: Iterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: PseudoRelation<Domain = I>,
 {
     // Precondition: $\property{bounded\_range}(f0, l0) \wedge
     //                \property{bounded\_range}(f1, l1)$
     // Precondition: $f0 \neq l0 \wedge f1 \neq l1 \wedge
     //                \property{disjoint}(f0, l0, f1, l1)$
-    typedef triple<I, I, I> T;
-    linker_to_tail<S> link_to_tail(set_link);
-    I h; I t;
-    if (r(f1, f0)) { h = f1; advance_tail(t, f1); goto s1; }
-    else           { h = f0; advance_tail(t, f0); goto s0; }
-s0: if (f0 == l0)                                 goto s2;
-    if (r(f1, f0)) {         link_to_tail(t, f1); goto s1; }
-    else           {         advance_tail(t, f0); goto s0; }
-s1: if (f1 == l1)                                 goto s3;
-    if (r(f1, f0)) {         advance_tail(t, f1); goto s1; }
-    else           {         link_to_tail(t, f0); goto s0; }
-s2: set_link(t, f1); return T(h, t, l1);
-s3: set_link(t, f0); return T(h, t, l0);
+    let link_to_tail = LinkerToTail::new(set_link.clone());
+    let h;
+    let mut t = I::default();
+    let mut state = if r.call(&f1, &f0) {
+        h = f1.clone();
+        advance_tail(&mut t, &mut f1);
+        CombineLinkedNonemptyState::S1
+    } else {
+        h = f0.clone();
+        advance_tail(&mut t, &mut f0);
+        CombineLinkedNonemptyState::S0
+    };
+    loop {
+        state = match state {
+            CombineLinkedNonemptyState::S0 => {
+                if f0 == l0 {
+                    CombineLinkedNonemptyState::S2
+                } else if r.call(&f1, &f0) {
+                    link_to_tail.call(&mut t, &mut f1);
+                    CombineLinkedNonemptyState::S1
+                } else {
+                    advance_tail(&mut t, &mut f0);
+                    CombineLinkedNonemptyState::S0
+                }
+            }
+            CombineLinkedNonemptyState::S1 => {
+                if f1 == l1 {
+                    CombineLinkedNonemptyState::S3
+                } else if r.call(&f1, &f0) {
+                    advance_tail(&mut t, &mut f1);
+                    CombineLinkedNonemptyState::S1
+                } else {
+                    link_to_tail.call(&mut t, &mut f0);
+                    CombineLinkedNonemptyState::S0
+                }
+            }
+            CombineLinkedNonemptyState::S2 => {
+                set_link.call(&mut t, &mut f1);
+                return Triple::new(h, t, l1);
+            }
+            CombineLinkedNonemptyState::S3 => {
+                set_link.call(&mut t, &mut f0);
+                return Triple::new(h, t, l0);
+            }
+        }
+    }
 }
 
 // Exercise 8.2: combine_linked
 
-
-template<typename I, typename S>
-    requires(ForwardLinker(S) && I == IteratorType(S))
-struct linker_to_head
+pub struct LinkerToHead<I, S>
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
 {
-    S set_link;
-    linker_to_head(const S& set_link) : set_link(set_link) { }
-    void operator()(I& h, I& f)
-    {
-        // Precondition: $\func{successor}(f)$ is defined
-        IteratorType(S) tmp = successor(f);
-        set_link(f, h);
-        h = f;
-        f = tmp;
-    }
-};
+    set_link: S,
+}
 
-template<typename I, typename S>
-    requires(ForwardLinker(S) && I == IteratorType(S))
-I reverse_append(I f, I l, I h, S set_link)
+impl<I, S> LinkerToHead<I, S>
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+{
+    pub fn new(set_link: S) -> Self {
+        Self { set_link }
+    }
+    pub fn call(&self, mut h: &mut I, mut f: &mut I) {
+        // Precondition: $\func{successor}(f)$ is defined
+        let tmp = f.successor();
+        self.set_link.call(&mut f, &mut h);
+        *h = f.clone();
+        *f = tmp;
+    }
+}
+
+pub fn reverse_append<I, S>(mut f: I, l: &I, mut h: I, set_link: S) -> I
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge h \notin [f, l)$
-    linker_to_head<I, S> link_to_head(set_link);
-    while (f != l) link_to_head(h, f);
-    return h;
+    let link_to_head = LinkerToHead::new(set_link);
+    while f != *l {
+        link_to_head.call(&mut h, &mut f);
+    }
+    h
 }
 
-template<typename I, typename P>
-    requires(Readable(I) &&
-        Predicate(P) && ValueType(I) == Domain(P))
-struct predicate_source
-{
-    P p;
-    predicate_source(const P& p) : p(p) { }
-    bool operator()(I i)
-    {
-        return p(source(i));
-    }
-};
+pub struct PredicateSource<I, P> {
+    p: P,
+    marker: PhantomData<I>,
+}
 
-template<typename I, typename S, typename P>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair< pair<I, I>, pair<I, I> >
-partition_linked(I f, I l, P p, S set_link)
+impl<I, P> PredicateSource<I, P> {
+    pub fn new(p: P) -> Self {
+        Self {
+            p,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<I, P> UnaryPseudoPredicate for PredicateSource<I, P>
+where
+    I: Readable,
+    P: UnaryPseudoPredicate<Domain = I::ValueType>,
+{
+    type Domain = I;
+    fn call(&mut self, i: &I) -> bool {
+        self.p.call(i.source())
+    }
+}
+
+pub fn partition_linked<I, S, P>(f: I, l: &I, p: P, set_link: S) -> Pair<Pair<I, I>, Pair<I, I>>
+where
+    I: Readable + ForwardIterator,
+    I::UnderlyingType: Regular,
+    S: ForwardLinker<IteratorType = I>,
+    P: UnaryPseudoPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
-    predicate_source<I, P> ps(p);
-    return split_linked(f, l, ps, set_link);
+    let ps = PredicateSource::new(p);
+    split_linked(f, l, ps, set_link)
 }
 
+/*
 template<typename I0, typename I1, typename R>
     requires(Readable(I0) && Readable(I1) &&
         ValueType(I0) == ValueType(I1) &&
