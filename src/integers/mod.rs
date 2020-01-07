@@ -23,6 +23,10 @@ pub trait Regular: Clone + Default + Eq {
     type UnderlyingType;
 }
 
+impl Regular for i32 {
+    type UnderlyingType = i32;
+}
+
 pub trait Integer:
     BitAnd<Self, Output = Self>
     + Div<Self, Output = Self>
@@ -37,6 +41,25 @@ pub trait Integer:
     + Zero
 {
     fn two() -> Self;
+}
+
+impl<I> Integer for I
+where
+    I: BitAnd<I, Output = I>
+        + Div<I, Output = I>
+        + NumCast
+        + One
+        + Ord
+        + Regular
+        + Rem<I, Output = I>
+        + Shl<I, Output = I>
+        + Shr<I, Output = I>
+        + Sub<I, Output = I>
+        + Zero,
+{
+    fn two() -> Self {
+        NumCast::from(2).unwrap()
+    }
 }
 
 // Exercise 3.2

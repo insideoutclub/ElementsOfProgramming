@@ -1937,7 +1937,7 @@ where
     *x = x.successor();
 }
 
-pub trait Readable {
+pub trait Readable: Regular {
     type ValueType: Regular;
     fn source(&self) -> &Self::ValueType;
 }
@@ -3353,520 +3353,802 @@ struct iterator_type< bidirectional_linker<I> >
 {
     typedef I type;
 };
+*/
 
-template<typename I>
-    requires(ForwardIterator(I))
-void advance_tail(I& t, I& f)
+pub fn advance_tail<I>(t: &mut I, f: &mut I)
+where
+    I: ForwardIterator,
 {
     // Precondition: $\func{successor}(f)\text{ is defined}$
-    t = f;
-    f = successor(f);
+    *t = f.clone();
+    *f = f.successor();
 }
 
-template<typename S>
-    requires(ForwardLinker(S))
-struct linker_to_tail
+pub trait ForwardLinker: Regular {
+    type IteratorType: ForwardIterator;
+    fn call(&self, t: &mut Self::IteratorType, f: &mut Self::IteratorType);
+}
+
+pub struct LinkerToTail<S> {
+    set_link: S,
+}
+
+impl<S> LinkerToTail<S>
+where
+    S: ForwardLinker,
 {
-    typedef IteratorType(S) I;
-    S set_link;
-    linker_to_tail(const S& set_link) : set_link(set_link) { }
-    void operator()(I& t, I& f)
-    {
+    pub fn new(set_link: S) -> Self {
+        Self { set_link }
+    }
+    pub fn call(&self, t: &mut S::IteratorType, f: &mut S::IteratorType) {
         // Precondition: $\func{successor}(f)\text{ is defined}$
-        set_link(t, f);
+        self.set_link.call(t, f);
         advance_tail(t, f);
     }
-};
-
-template<typename I>
-    requires(ForwardIterator(I))
-I find_last(I f, I l)
-{
-    // Precondition: $\property{bounded\_range}(f, l) \wedge f \neq l$
-    I t;
-    do
-        advance_tail(t, f);
-    while (f != l);
-    return t;
 }
 
-template<typename I, typename S, typename Pred>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        UnaryPseudoPredicate(Pred) && I == Domain(Pred))
-pair< pair<I, I>, pair<I, I> >
-split_linked(I f, I l, Pred p, S set_link)
+pub fn find_last<I>(mut f: I, l: &I) -> I
+where
+    I: ForwardIterator,
+{
+    // Precondition: $\property{bounded\_range}(f, l) \wedge f \neq l$
+    let mut t = I::default();
+    loop {
+        advance_tail(&mut t, &mut f);
+        if f == *l {
+            break;
+        }
+    }
+    t
+}
+
+pub trait UnaryPseudoPredicate {
+    type Domain;
+    fn call(&mut self, x: &Self::Domain) -> bool;
+}
+
+enum SplitLinkedState {
+    S0,
+    S1,
+    S2,
+    S3,
+    S4,
+}
+
+pub fn split_linked<I, S, Pred>(
+    mut f: I,
+    l: &I,
+    mut p: Pred,
+    set_link: S,
+) -> Pair<Pair<I, I>, Pair<I, I>>
+where
+    S: ForwardLinker<IteratorType = I>,
+    I: Iterator,
+    I::UnderlyingType: Regular,
+    Pred: UnaryPseudoPredicate<Domain = I>,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
-    typedef pair<I, I> P;
-    linker_to_tail<S> link_to_tail(set_link);
-    I h0 = l; I t0 = l;
-    I h1 = l; I t1 = l;
-    if (f == l)                              goto s4;
-    if (p(f)) { h1 = f; advance_tail(t1, f); goto s1; }
-    else      { h0 = f; advance_tail(t0, f); goto s0; }
-s0: if (f == l)                              goto s4;
-    if (p(f)) { h1 = f; advance_tail(t1, f); goto s3; }
-    else      {         advance_tail(t0, f); goto s0; }
-s1: if (f == l)                              goto s4;
-    if (p(f)) {         advance_tail(t1, f); goto s1; }
-    else      { h0 = f; advance_tail(t0, f); goto s2; }
-s2: if (f == l)                              goto s4;
-    if (p(f)) {         link_to_tail(t1, f); goto s3; }
-    else      {         advance_tail(t0, f); goto s2; }
-s3: if (f == l)                              goto s4;
-    if (p(f)) {         advance_tail(t1, f); goto s3; }
-    else      {         link_to_tail(t0, f); goto s2; }
-s4: return pair<P, P>(P(h0, t0), P(h1, t1));
+    let link_to_tail = LinkerToTail::new(set_link);
+    let mut h0 = l.clone();
+    let mut t0 = l.clone();
+    let mut h1 = l.clone();
+    let mut t1 = l.clone();
+    let mut state = if f == *l {
+        SplitLinkedState::S4
+    } else if p.call(&f) {
+        h1 = f.clone();
+        advance_tail(&mut t1, &mut f);
+        SplitLinkedState::S1
+    } else {
+        h0 = f.clone();
+        advance_tail(&mut t0, &mut f);
+        SplitLinkedState::S0
+    };
+    loop {
+        state = match state {
+            SplitLinkedState::S0 => {
+                if f == *l {
+                    SplitLinkedState::S4
+                } else if p.call(&f) {
+                    h1 = f.clone();
+                    advance_tail(&mut t1, &mut f);
+                    SplitLinkedState::S3
+                } else {
+                    advance_tail(&mut t0, &mut f);
+                    SplitLinkedState::S0
+                }
+            }
+            SplitLinkedState::S1 => {
+                if f == *l {
+                    SplitLinkedState::S4
+                } else if p.call(&f) {
+                    advance_tail(&mut t1, &mut f);
+                    SplitLinkedState::S1
+                } else {
+                    h0 = f.clone();
+                    advance_tail(&mut t0, &mut f);
+                    SplitLinkedState::S2
+                }
+            }
+            SplitLinkedState::S2 => {
+                if f == *l {
+                    SplitLinkedState::S4
+                } else if p.call(&f) {
+                    link_to_tail.call(&mut t1, &mut f);
+                    SplitLinkedState::S3
+                } else {
+                    advance_tail(&mut t0, &mut f);
+                    SplitLinkedState::S2
+                }
+            }
+            SplitLinkedState::S3 => {
+                if f == *l {
+                    SplitLinkedState::S4
+                } else if p.call(&f) {
+                    advance_tail(&mut t1, &mut f);
+                    SplitLinkedState::S3
+                } else {
+                    link_to_tail.call(&mut t0, &mut f);
+                    SplitLinkedState::S2
+                }
+            }
+            SplitLinkedState::S4 => {
+                return Pair::new(Pair::new(h0, t0), Pair::new(h1, t1));
+            }
+        }
+    }
 }
 
 // Exercise 8.1: Explain the postcondition of split_linked
 
+pub trait PseudoRelation: Regular {
+    type Domain0;
+    type Domain1;
+    fn call(&mut self, x: &Self::Domain0, y: &Self::Domain1) -> bool;
+}
 
-template<typename I, typename S, typename R>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        PseudoRelation(R) && I == Domain(R))
-triple<I, I, I>
-combine_linked_nonempty(I f0, I l0, I f1, I l1, R r, S set_link)
+enum CombineLinkedNonemptyState {
+    S0,
+    S1,
+    S2,
+    S3,
+}
+
+pub fn combine_linked_nonempty<I, S, R>(
+    mut f0: I,
+    l0: I,
+    mut f1: I,
+    l1: I,
+    mut r: R,
+    set_link: &S,
+) -> Triple<I, I, I>
+where
+    I: Iterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: PseudoRelation<Domain0 = I, Domain1 = I>,
 {
     // Precondition: $\property{bounded\_range}(f0, l0) \wedge
     //                \property{bounded\_range}(f1, l1)$
     // Precondition: $f0 \neq l0 \wedge f1 \neq l1 \wedge
     //                \property{disjoint}(f0, l0, f1, l1)$
-    typedef triple<I, I, I> T;
-    linker_to_tail<S> link_to_tail(set_link);
-    I h; I t;
-    if (r(f1, f0)) { h = f1; advance_tail(t, f1); goto s1; }
-    else           { h = f0; advance_tail(t, f0); goto s0; }
-s0: if (f0 == l0)                                 goto s2;
-    if (r(f1, f0)) {         link_to_tail(t, f1); goto s1; }
-    else           {         advance_tail(t, f0); goto s0; }
-s1: if (f1 == l1)                                 goto s3;
-    if (r(f1, f0)) {         advance_tail(t, f1); goto s1; }
-    else           {         link_to_tail(t, f0); goto s0; }
-s2: set_link(t, f1); return T(h, t, l1);
-s3: set_link(t, f0); return T(h, t, l0);
+    let link_to_tail = LinkerToTail::new(set_link.clone());
+    let h;
+    let mut t = I::default();
+    let mut state = if r.call(&f1, &f0) {
+        h = f1.clone();
+        advance_tail(&mut t, &mut f1);
+        CombineLinkedNonemptyState::S1
+    } else {
+        h = f0.clone();
+        advance_tail(&mut t, &mut f0);
+        CombineLinkedNonemptyState::S0
+    };
+    loop {
+        state = match state {
+            CombineLinkedNonemptyState::S0 => {
+                if f0 == l0 {
+                    CombineLinkedNonemptyState::S2
+                } else if r.call(&f1, &f0) {
+                    link_to_tail.call(&mut t, &mut f1);
+                    CombineLinkedNonemptyState::S1
+                } else {
+                    advance_tail(&mut t, &mut f0);
+                    CombineLinkedNonemptyState::S0
+                }
+            }
+            CombineLinkedNonemptyState::S1 => {
+                if f1 == l1 {
+                    CombineLinkedNonemptyState::S3
+                } else if r.call(&f1, &f0) {
+                    advance_tail(&mut t, &mut f1);
+                    CombineLinkedNonemptyState::S1
+                } else {
+                    link_to_tail.call(&mut t, &mut f0);
+                    CombineLinkedNonemptyState::S0
+                }
+            }
+            CombineLinkedNonemptyState::S2 => {
+                set_link.call(&mut t, &mut f1);
+                return Triple::new(h, t, l1);
+            }
+            CombineLinkedNonemptyState::S3 => {
+                set_link.call(&mut t, &mut f0);
+                return Triple::new(h, t, l0);
+            }
+        }
+    }
 }
 
 // Exercise 8.2: combine_linked
 
-
-template<typename I, typename S>
-    requires(ForwardLinker(S) && I == IteratorType(S))
-struct linker_to_head
+pub struct LinkerToHead<I, S>
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
 {
-    S set_link;
-    linker_to_head(const S& set_link) : set_link(set_link) { }
-    void operator()(I& h, I& f)
-    {
-        // Precondition: $\func{successor}(f)$ is defined
-        IteratorType(S) tmp = successor(f);
-        set_link(f, h);
-        h = f;
-        f = tmp;
-    }
-};
+    set_link: S,
+}
 
-template<typename I, typename S>
-    requires(ForwardLinker(S) && I == IteratorType(S))
-I reverse_append(I f, I l, I h, S set_link)
+impl<I, S> LinkerToHead<I, S>
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+{
+    pub fn new(set_link: S) -> Self {
+        Self { set_link }
+    }
+    pub fn call(&self, mut h: &mut I, mut f: &mut I) {
+        // Precondition: $\func{successor}(f)$ is defined
+        let tmp = f.successor();
+        self.set_link.call(&mut f, &mut h);
+        *h = f.clone();
+        *f = tmp;
+    }
+}
+
+pub fn reverse_append<I, S>(mut f: I, l: &I, mut h: I, set_link: S) -> I
+where
+    I: ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge h \notin [f, l)$
-    linker_to_head<I, S> link_to_head(set_link);
-    while (f != l) link_to_head(h, f);
-    return h;
+    let link_to_head = LinkerToHead::new(set_link);
+    while f != *l {
+        link_to_head.call(&mut h, &mut f);
+    }
+    h
 }
 
-template<typename I, typename P>
-    requires(Readable(I) &&
-        Predicate(P) && ValueType(I) == Domain(P))
-struct predicate_source
-{
-    P p;
-    predicate_source(const P& p) : p(p) { }
-    bool operator()(I i)
-    {
-        return p(source(i));
-    }
-};
+pub struct PredicateSource<I, P> {
+    p: P,
+    marker: PhantomData<I>,
+}
 
-template<typename I, typename S, typename P>
-    requires(ForwardLinker(S) && I == IteratorType(S) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair< pair<I, I>, pair<I, I> >
-partition_linked(I f, I l, P p, S set_link)
+impl<I, P> PredicateSource<I, P> {
+    pub fn new(p: P) -> Self {
+        Self {
+            p,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<I, P> UnaryPseudoPredicate for PredicateSource<I, P>
+where
+    I: Readable,
+    P: UnaryPseudoPredicate<Domain = I::ValueType>,
+{
+    type Domain = I;
+    fn call(&mut self, i: &I) -> bool {
+        self.p.call(i.source())
+    }
+}
+
+impl<I, P> UnaryPredicate for PredicateSource<I, P>
+where
+    I: Readable,
+    P: UnaryPredicate<Domain = I::ValueType>,
+{
+    type Domain = I;
+    fn call(&self, i: &I) -> bool {
+        self.p.call(i.source())
+    }
+}
+
+pub fn partition_linked<I, S, P>(f: I, l: &I, p: P, set_link: S) -> Pair<Pair<I, I>, Pair<I, I>>
+where
+    I: Readable + ForwardIterator,
+    I::UnderlyingType: Regular,
+    S: ForwardLinker<IteratorType = I>,
+    P: UnaryPseudoPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
-    predicate_source<I, P> ps(p);
-    return split_linked(f, l, ps, set_link);
+    let ps = PredicateSource::new(p);
+    split_linked(f, l, ps, set_link)
 }
 
-template<typename I0, typename I1, typename R>
-    requires(Readable(I0) && Readable(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Relation(R) && ValueType(I0) == Domain(R))
-struct relation_source
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
 {
-    R r;
-    relation_source(const R& r) : r(r) { }
-    bool operator()(I0 i0, I1 i1)
-    {
-        return r(source(i0), source(i1));
-    }
-};
+    r: R,
+    marker: PhantomData<(I0, I1)>,
+}
 
-template<typename I, typename S, typename R>
-    requires(Readable(I) &&
-        ForwardLinker(S) && I == IteratorType(S) &&
-        Relation(R) && ValueType(I) == Domain(R))
-pair<I, I> merge_linked_nonempty(I f0, I l0, I f1, I l1,
-                                 R r, S set_link)
+impl<I0, I1, R> RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    pub fn new(r: R) -> Self {
+        Self {
+            r,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<I0, I1, R> Regular for RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    type UnderlyingType = ();
+}
+
+impl<I0, I1, R> PseudoRelation for RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    type Domain0 = I0;
+    type Domain1 = I1;
+    fn call(&mut self, i0: &I0, i1: &I1) -> bool {
+        self.r.call(i0.source(), i1.source())
+    }
+}
+
+pub fn merge_linked_nonempty<I, S, R>(
+    f0: I,
+    l0: I,
+    f1: I,
+    mut l1: I,
+    r: R,
+    set_link: &S,
+) -> Pair<I, I>
+where
+    I: Readable + ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $f0 \neq l0 \wedge f1 \neq l1$
     // Precondition: $\property{increasing\_range}(f0, l0, r)$
     // Precondition: $\property{increasing\_range}(f1, l1, r)$
-    relation_source<I, I, R> rs(r);
-    triple<I, I, I> t = combine_linked_nonempty(f0, l0, f1, l1,
-                                                rs, set_link);
-    set_link(find_last(t.m1, t.m2), l1);
-    return pair<I, I>(t.m0, l1);
+    let rs = RelationSource::new(r);
+    let t = combine_linked_nonempty(f0, l0, f1, l1.clone(), rs, set_link);
+    set_link.call(&mut find_last(t.m1, &t.m2), &mut l1);
+    Pair::new(t.m0, l1)
 }
 
-template<typename I, typename S, typename R>
-    requires(Readable(I) &&
-        ForwardLinker(S) && I == IteratorType(S) &&
-        Relation(R) && ValueType(I) == Domain(R))
-pair<I, I> sort_linked_nonempty_n(I f, DistanceType(I) n,
-                                  R r, S set_link)
+pub fn sort_linked_nonempty_n<I, S, R>(f: I, n: I::DistanceType, r: R, set_link: &S) -> Pair<I, I>
+where
+    I: Readable + ForwardIterator,
+    S: ForwardLinker<IteratorType = I>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{counted\_range}(f, n) \wedge
     //                n > 0 \wedge \func{weak\_ordering}(r)$
-    typedef DistanceType(I) N;
-    typedef pair<I, I> P;
-    if (n == N(1)) return P(f, successor(f));
-    N h = half_nonnegative(n);
-    P p0 = sort_linked_nonempty_n(f, h, r, set_link);
-    P p1 = sort_linked_nonempty_n(p0.m1, n - h, r, set_link);
-    return merge_linked_nonempty(p0.m0, p0.m1,
-                                 p1.m0, p1.m1, r, set_link);
+    if n == I::DistanceType::one() {
+        return Pair::new(f.clone(), f.successor());
+    }
+    let h = half_nonnegative(n.clone());
+    let p0 = sort_linked_nonempty_n(f, h.clone(), r.clone(), set_link);
+    let p1 = sort_linked_nonempty_n(p0.m1.clone(), n - h, r.clone(), set_link);
+    merge_linked_nonempty(p0.m0, p0.m1, p1.m0, p1.m1, r, set_link)
 }
 
 // Exercise 8.3: Complexity of sort_linked_nonempty_n
 
-
 // Exercise 8.4: unique
 
-
-template<typename C>
-     requires(EmptyLinkedBifurcateCoordinate(C))
-void tree_rotate(C& curr, C& prev)
-{
-    // Precondition: $\neg \func{empty}(curr)$
-    C tmp = left_successor(curr);
-    set_left_successor(curr, right_successor(curr));
-    set_right_successor(curr, prev);
-    if (empty(tmp)) { prev = tmp; return; }
-    prev = curr;
-    curr = tmp;
+pub trait LinkedBifurcateCoordinate: BifurcateCoordinate {
+    fn set_left_successor(&mut self, x: &mut Self);
+    fn set_right_successor(&mut self, x: &mut Self);
 }
 
-template<typename C, typename Proc>
-    requires(EmptyLinkedBifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        C == InputType(Proc, 0))
-Proc traverse_rotating(C c, Proc proc)
+pub trait EmptyLinkedBifurcateCoordinate: LinkedBifurcateCoordinate {}
+
+pub fn tree_rotate<C>(curr: &mut C, mut prev: &mut C)
+where
+    C: EmptyLinkedBifurcateCoordinate,
+{
+    // Precondition: $\neg \func{empty}(curr)$
+    let tmp = curr.left_successor();
+    curr.set_left_successor(&mut curr.right_successor());
+    curr.set_right_successor(&mut prev);
+    if tmp.empty() {
+        *prev = tmp;
+        return;
+    }
+    *prev = curr.clone();
+    *curr = tmp;
+}
+
+pub trait UnaryProcedure {
+    type Domain;
+    fn call(&mut self, x: &Self::Domain);
+}
+
+pub fn traverse_rotating<C, Proc>(c: &C, mut proc: Proc) -> Proc
+where
+    C: EmptyLinkedBifurcateCoordinate,
+    Proc: UnaryProcedure<Domain = C>,
 {
     // Precondition: $\property{tree}(c)$
-    if (empty(c)) return proc;
-    C curr = c;
-    C prev;
-    do {
-        proc(curr);
-        tree_rotate(curr, prev);
-    } while (curr != c);
-    do {
-        proc(curr);
-        tree_rotate(curr, prev);
-    } while (curr != c);
-    proc(curr);
-    tree_rotate(curr, prev);
-    return proc;
+    if c.empty() {
+        return proc;
+    }
+    let mut curr = c.clone();
+    let mut prev = C::default();
+    loop {
+        proc.call(&curr);
+        tree_rotate(&mut curr, &mut prev);
+        if curr == *c {
+            break;
+        }
+    }
+    loop {
+        proc.call(&curr);
+        tree_rotate(&mut curr, &mut prev);
+        if curr == *c {
+            break;
+        }
+    }
+    proc.call(&curr);
+    tree_rotate(&mut curr, &mut prev);
+    proc
 }
 
 // Exercise 8.5: Diagram each state of traverse_rotating
 // for a complete binary tree with 7 nodes
 
-
-template<typename T, typename N>
-    requires(Integer(N))
-struct counter
+#[derive(Default)]
+pub struct Counter<T, N>
+where
+    N: Integer,
 {
-    N n;
-    counter() : n(0) { }
-    counter(N n) : n(n) { }
-    void operator()(const T&) { n = successor(n); }
-};
+    n: N,
+    marker: PhantomData<T>,
+}
 
-template<typename C>
-    requires(EmptyLinkedBifurcateCoordinate(C))
-WeightType(C) weight_rotating(C c)
+impl<T, N> Counter<T, N>
+where
+    N: Integer,
+{
+    pub fn new(n: N) -> Self {
+        Self {
+            n,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T, N> UnaryProcedure for Counter<T, N>
+where
+    N: Integer,
+{
+    type Domain = T;
+    fn call(&mut self, _: &T) {
+        self.n = successor(self.n.clone());
+    }
+}
+
+pub fn weight_rotating<C>(c: &C) -> C::WeightType
+where
+    C: EmptyLinkedBifurcateCoordinate,
 {
     // Precondition: $\property{tree}(c)$
-    typedef WeightType(C) N;
-    return traverse_rotating(c, counter<C, N>()).n / N(3);
+    traverse_rotating(c, Counter::<C, C::WeightType>::default()).n / NumCast::from(3).unwrap()
 }
 
-template<typename N, typename Proc>
-    requires(Integer(N) &&
-        Procedure(Proc) && Arity(Proc) == 1)
-struct phased_applicator
+pub struct PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
 {
-    N period;
-    N phase;
-    N n;
+    period: N,
+    phase: N,
+    n: N,
     // Invariant: $n, phase \in [0, period)$
-    Proc proc;
-    phased_applicator(N period, N phase, N n, Proc proc) :
-        period(period), phase(phase), n(n), proc(proc) { }
-    void operator()(InputType(Proc, 0) x)
-    {
-        if (n == phase) proc(x);
-        n = successor(n);
-        if (n == period) n = 0;
-    }
-};
+    proc: Proc,
+}
 
-template<typename C, typename Proc>
-    requires(EmptyLinkedBifurcateCoordinate(C) &&
-        Procedure(Proc) && Arity(Proc) == 1 &&
-        C == InputType(Proc, 0))
-Proc traverse_phased_rotating(C c, int phase, Proc proc)
+impl<N, Proc> PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
+{
+    pub fn new(period: N, phase: N, n: N, proc: Proc) -> Self {
+        Self {
+            period,
+            phase,
+            n,
+            proc,
+        }
+    }
+}
+
+impl<N, Proc> UnaryProcedure for PhasedApplicator<N, Proc>
+where
+    N: Integer,
+    Proc: UnaryProcedure,
+{
+    type Domain = Proc::Domain;
+    fn call(&mut self, x: &Self::Domain) {
+        if self.n == self.phase {
+            self.proc.call(x);
+        }
+        self.n = successor(self.n.clone());
+        if self.n == self.period {
+            self.n = N::zero();
+        }
+    }
+}
+
+pub fn traverse_phased_rotating<C, Proc>(c: &C, phase: i32, proc: Proc) -> Proc
+where
+    C: EmptyLinkedBifurcateCoordinate,
+    Proc: UnaryProcedure<Domain = C>,
 {
     // Precondition: $\property{tree}(c) \wedge 0 \leq phase < 3$
-    phased_applicator<int, Proc> applicator(3, phase, 0, proc);
-    return traverse_rotating(c, applicator).proc;
+    let applicator = PhasedApplicator::<i32, Proc>::new(3, phase, 0, proc);
+    traverse_rotating(c, applicator).proc
 }
-
 
 //
 //  Chapter 9. Copying
 //
 
-
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-void copy_step(I& f_i, O& f_o)
-{
-    // Precondition: $\func{source}(f_i)$ and $\func{sink}(f_o)$ are defined
-    sink(f_o) = source(f_i);
-    f_i = successor(f_i);
-    f_o = successor(f_o);
+pub trait Writable {
+    type ValueType: Regular;
+    fn sink(&mut self) -> &mut Self::ValueType;
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-O copy(I f_i, I l_i, O f_o)
+pub fn copy_step<I, O>(f_i: &mut I, f_o: &mut O)
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+{
+    // Precondition: $\func{source}(f_i)$ and $\func{sink}(f_o)$ are defined
+    *f_o.sink() = f_i.source().clone();
+    *f_i = f_i.successor();
+    *f_o = f_o.successor();
+}
+
+pub fn copy<I, O>(mut f_i: I, l_i: &I, mut f_o: O) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition:
     // $\property{not\_overlapped\_forward}(f_i, l_i, f_o, f_o + (l_i - f_i))$
-    while (f_i != l_i) copy_step(f_i, f_o);
-    return f_o;
+    while f_i != *l_i {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    f_o
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-void fill_step(I& f_o, const ValueType(I)& x)
+pub fn fill_step<I>(f_o: &mut I, x: &I::ValueType)
+where
+    I: Writable + Iterator,
 {
-    sink(f_o) = x;
-    f_o = successor(f_o);
+    *f_o.sink() = x.clone();
+    *f_o = f_o.successor();
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-I fill(I f, I l, const ValueType(I)& x)
+pub fn fill<I>(mut f: I, l: &I, x: &I::ValueType) -> I
+where
+    I: Writable + Iterator,
 {
-    while (f != l) fill_step(f, x);
-    return f;
+    while f != *l {
+        fill_step(&mut f, x);
+    }
+    f
 }
 
-template<typename O>
-    requires(Writable(O) && Iterator(O) &&
-        Integer(ValueType(O)))
-O iota(ValueType(O) n, O o) // like APL $\iota$
+pub fn iota<O>(n: &O::ValueType, o: O) -> O
+where
+    O: Writable + Iterator,
+    O::ValueType: Integer + Iterator + Readable<ValueType = O::ValueType>, // like APL $\iota$
 {
     // Precondition: $\property{writable\_counted\_range}(o, n) \wedge n \geq 0$
-    return copy(ValueType(O)(0), n, o);
+    copy(O::ValueType::zero(), n, o)
 }
 
 // Useful for testing in conjunction with iota
-template<typename I>
-    requires(Readable(I) && Iterator(I) &&
-        Integer(ValueType(I)))
-bool equal_iota(I f, I l, ValueType(I) n = 0)
+pub fn equal_iota<I>(mut f: I, l: &I, mut n: I::ValueType /*= 0*/) -> bool
+where
+    I: Readable + Iterator,
+    I::ValueType: Integer,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (source(f) != n) return false;
+    while f != *l {
+        if *f.source() != n {
+            return false;
+        }
         n = successor(n);
-        f = successor(f);
+        f = f.successor();
     }
-    return true;
+    true
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-pair<I, O> copy_bounded(I f_i, I l_i, O f_o, O l_o)
+pub fn copy_bounded<I, O>(mut f_i: I, l_i: &I, mut f_o: O, l_o: &O) -> Pair<I, O>
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, l_i, f_o, l_o)$
-    while (f_i != l_i && f_o != l_o) copy_step(f_i, f_o);
-    return pair<I, O>(f_i, f_o);
+    while f_i != *l_i && f_o != *l_o {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    Pair::new(f_i, f_o)
 }
 
-template<typename N>
-    requires(Integer(N))
-bool count_down(N& n)
+pub fn count_down<N>(n: &mut N) -> bool
+where
+    N: Integer,
 {
     // Precondition: $n \geq 0$
-    if (zero(n)) return false;
-    n = predecessor(n);
-    return true;
+    if zero(n) {
+        return false;
+    }
+    *n = predecessor(n.clone());
+    true
 }
 
-template<typename I, typename O, typename N>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        Integer(N))
-pair<I, O> copy_n(I f_i, N n, O f_o)
+pub fn copy_n<I, O, N>(mut f_i: I, mut n: N, mut f_o: O) -> Pair<I, O>
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    N: Integer,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, f_i+n, f_o, f_o+n)$
-    while (count_down(n)) copy_step(f_i, f_o);
-    return pair<I, O>(f_i, f_o);
+    while count_down(&mut n) {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    Pair::new(f_i, f_o)
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-I fill_n(I f, DistanceType(I) n, const ValueType(I)& x)
+pub fn fill_n<I>(mut f: I, mut n: I::DistanceType, x: &I::ValueType) -> I
+where
+    I: Writable + Iterator,
 {
-    while (count_down(n)) fill_step(f, x);
-    return f;
+    while count_down(&mut n) {
+        fill_step(&mut f, x);
+    }
+    f
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-void copy_backward_step(I& l_i, O& l_o)
+pub fn copy_backward_step<I, O>(l_i: &mut I, l_o: &mut O)
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\func{source}(\property{predecessor}(l_i))$ and
     //               $\func{sink}(\property{predecessor}(l_o))$
     //               are defined
-    l_i = predecessor(l_i);
-    l_o = predecessor(l_o);
-    sink(l_o) = source(l_i);
+    *l_i = l_i.predecessor();
+    *l_o = l_o.predecessor();
+    *l_o.sink() = l_i.source().clone();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-O copy_backward(I f_i, I l_i, O l_o)
+pub fn copy_backward<I, O>(f_i: &I, mut l_i: I, mut l_o: O) -> O
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{not\_overlapped\_backward}(f_i, l_i, l_o-(l_i-f_i), l_o)$
-    while (f_i != l_i) copy_backward_step(l_i, l_o);
-    return l_o;
+    while *f_i != l_i {
+        copy_backward_step(&mut l_i, &mut l_o);
+    }
+    l_o
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-pair<I, O> copy_backward_n(I l_i, DistanceType(I) n, O l_o)
+pub fn copy_backward_n<I, O>(mut l_i: I, mut n: I::DistanceType, mut l_o: O) -> Pair<I, O>
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
-    while (count_down(n)) copy_backward_step(l_i, l_o);
-    return pair<I, O>(l_i, l_o);
+    while count_down(&mut n) {
+        copy_backward_step(&mut l_i, &mut l_o);
+    }
+    Pair::new(l_i, l_o)
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-void reverse_copy_step(I& l_i, O& f_o)
+pub fn reverse_copy_step<I, O>(l_i: &mut I, f_o: &mut O)
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\func{source}(\func{predecessor}(l_i))$ and
     //               $\func{sink}(f_o)$ are defined
-    l_i = predecessor(l_i);
-    sink(f_o) = source(l_i);
-    f_o = successor(f_o);
+    *l_i = l_i.predecessor();
+    *f_o.sink() = l_i.source().clone();
+    *f_o = f_o.successor();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-void reverse_copy_backward_step(I& f_i, O& l_o)
+pub fn reverse_copy_backward_step<I, O>(f_i: &mut I, l_o: &mut O)
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\func{source}(f_i)$ and
     //               $\func{sink}(\property{predecessor}(l_o))$ are defined
-    l_o = predecessor(l_o);
-    sink(l_o) = source(f_i);
-    f_i = successor(f_i);
+    *l_o = l_o.predecessor();
+    *l_o.sink() = f_i.source().clone();
+    *f_i = f_i.successor();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-O reverse_copy(I f_i, I l_i, O f_o)
+pub fn reverse_copy<I, O>(f_i: &I, mut l_i: I, mut f_o: O) -> O
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\property{not\_overlapped}(f_i, l_i, f_o, f_o+(l_i-f_i))$
-    while (f_i != l_i) reverse_copy_step(l_i, f_o);
-    return f_o;
+    while *f_i != l_i {
+        reverse_copy_step(&mut l_i, &mut f_o);
+    }
+    f_o
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-O reverse_copy_backward(I f_i, I l_i, O l_o)
+pub fn reverse_copy_backward<I, O>(mut f_i: I, l_i: &I, mut l_o: O) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{not\_overlapped}(f_i, l_i, l_o-(l_i-f_i), l_o)$
-    while (f_i != l_i) reverse_copy_backward_step(f_i, l_o);
-    return l_o;
+    while f_i != *l_i {
+        reverse_copy_backward_step(&mut f_i, &mut l_o);
+    }
+    l_o
 }
 
-template<typename I, typename O, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        UnaryPredicate(P) && I == Domain(P))
-O copy_select(I f_i, I l_i, O f_t, P p)
+pub fn copy_select<I, O, P>(mut f_i: I, l_i: &I, mut f_t: O, p: &P) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I>,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, l_i, f_t, f_t+n_t)$
     // where $n_t$ is an upper bound for the number of iterators satisfying $p$
-    while (f_i != l_i)
-        if (p(f_i)) copy_step(f_i, f_t);
-        else f_i = successor(f_i);
-    return f_t;
+    while f_i != *l_i {
+        if p.call(&f_i) {
+            copy_step(&mut f_i, &mut f_t);
+        } else {
+            f_i = f_i.successor();
+        }
+    }
+    f_t
 }
 
-template<typename I, typename O, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-O copy_if(I f_i, I l_i, O f_t, P p)
+pub fn copy_if<I, O, P>(f_i: I, l_i: &I, f_t: O, p: P) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: same as for $\func{copy\_select}$
-    predicate_source<I, P> ps(p);
-    return copy_select(f_i, l_i, f_t, ps);
+    let ps = PredicateSource::new(p);
+    copy_select(f_i, l_i, f_t, &ps)
 }
 
+/*
 template<typename I, typename O_f, typename O_t, typename P>
     requires(Readable(I) && Iterator(I) &&
         Writable(O_f) && Iterator(O_f) &&
