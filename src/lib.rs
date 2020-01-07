@@ -3654,6 +3654,17 @@ where
     }
 }
 
+impl<I, P> UnaryPredicate for PredicateSource<I, P>
+where
+    I: Readable,
+    P: UnaryPredicate<Domain = I::ValueType>,
+{
+    type Domain = I;
+    fn call(&self, i: &I) -> bool {
+        self.p.call(i.source())
+    }
+}
+
 pub fn partition_linked<I, S, P>(f: I, l: &I, p: P, set_link: S) -> Pair<Pair<I, I>, Pair<I, I>>
 where
     I: Readable + ForwardIterator,
@@ -3910,227 +3921,244 @@ where
     traverse_rotating(c, applicator).proc
 }
 
-/*
 //
 //  Chapter 9. Copying
 //
 
-
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-void copy_step(I& f_i, O& f_o)
-{
-    // Precondition: $\func{source}(f_i)$ and $\func{sink}(f_o)$ are defined
-    sink(f_o) = source(f_i);
-    f_i = successor(f_i);
-    f_o = successor(f_o);
+pub trait Writable {
+    type ValueType: Regular;
+    fn sink(&mut self) -> &mut Self::ValueType;
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-O copy(I f_i, I l_i, O f_o)
+pub fn copy_step<I, O>(f_i: &mut I, f_o: &mut O)
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+{
+    // Precondition: $\func{source}(f_i)$ and $\func{sink}(f_o)$ are defined
+    *f_o.sink() = f_i.source().clone();
+    *f_i = f_i.successor();
+    *f_o = f_o.successor();
+}
+
+pub fn copy<I, O>(mut f_i: I, l_i: &I, mut f_o: O) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition:
     // $\property{not\_overlapped\_forward}(f_i, l_i, f_o, f_o + (l_i - f_i))$
-    while (f_i != l_i) copy_step(f_i, f_o);
-    return f_o;
+    while f_i != *l_i {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    f_o
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-void fill_step(I& f_o, const ValueType(I)& x)
+pub fn fill_step<I>(f_o: &mut I, x: &I::ValueType)
+where
+    I: Writable + Iterator,
 {
-    sink(f_o) = x;
-    f_o = successor(f_o);
+    *f_o.sink() = x.clone();
+    *f_o = f_o.successor();
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-I fill(I f, I l, const ValueType(I)& x)
+pub fn fill<I>(mut f: I, l: &I, x: &I::ValueType) -> I
+where
+    I: Writable + Iterator,
 {
-    while (f != l) fill_step(f, x);
-    return f;
+    while f != *l {
+        fill_step(&mut f, x);
+    }
+    f
 }
 
-template<typename O>
-    requires(Writable(O) && Iterator(O) &&
-        Integer(ValueType(O)))
-O iota(ValueType(O) n, O o) // like APL $\iota$
+pub fn iota<O>(n: &O::ValueType, o: O) -> O
+where
+    O: Writable + Iterator,
+    O::ValueType: Integer + Iterator + Readable<ValueType = O::ValueType>, // like APL $\iota$
 {
     // Precondition: $\property{writable\_counted\_range}(o, n) \wedge n \geq 0$
-    return copy(ValueType(O)(0), n, o);
+    copy(O::ValueType::zero(), n, o)
 }
 
 // Useful for testing in conjunction with iota
-template<typename I>
-    requires(Readable(I) && Iterator(I) &&
-        Integer(ValueType(I)))
-bool equal_iota(I f, I l, ValueType(I) n = 0)
+pub fn equal_iota<I>(mut f: I, l: &I, mut n: I::ValueType /*= 0*/) -> bool
+where
+    I: Readable + Iterator,
+    I::ValueType: Integer,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
-    while (f != l) {
-        if (source(f) != n) return false;
+    while f != *l {
+        if *f.source() != n {
+            return false;
+        }
         n = successor(n);
-        f = successor(f);
+        f = f.successor();
     }
-    return true;
+    true
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-pair<I, O> copy_bounded(I f_i, I l_i, O f_o, O l_o)
+pub fn copy_bounded<I, O>(mut f_i: I, l_i: &I, mut f_o: O, l_o: &O) -> Pair<I, O>
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, l_i, f_o, l_o)$
-    while (f_i != l_i && f_o != l_o) copy_step(f_i, f_o);
-    return pair<I, O>(f_i, f_o);
+    while f_i != *l_i && f_o != *l_o {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    Pair::new(f_i, f_o)
 }
 
-template<typename N>
-    requires(Integer(N))
-bool count_down(N& n)
+pub fn count_down<N>(n: &mut N) -> bool
+where
+    N: Integer,
 {
     // Precondition: $n \geq 0$
-    if (zero(n)) return false;
-    n = predecessor(n);
-    return true;
+    if zero(n) {
+        return false;
+    }
+    *n = predecessor(n.clone());
+    true
 }
 
-template<typename I, typename O, typename N>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        Integer(N))
-pair<I, O> copy_n(I f_i, N n, O f_o)
+pub fn copy_n<I, O, N>(mut f_i: I, mut n: N, mut f_o: O) -> Pair<I, O>
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    N: Integer,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, f_i+n, f_o, f_o+n)$
-    while (count_down(n)) copy_step(f_i, f_o);
-    return pair<I, O>(f_i, f_o);
+    while count_down(&mut n) {
+        copy_step(&mut f_i, &mut f_o);
+    }
+    Pair::new(f_i, f_o)
 }
 
-template<typename I>
-    requires(Writable(I) && Iterator(I))
-I fill_n(I f, DistanceType(I) n, const ValueType(I)& x)
+pub fn fill_n<I>(mut f: I, mut n: I::DistanceType, x: &I::ValueType) -> I
+where
+    I: Writable + Iterator,
 {
-    while (count_down(n)) fill_step(f, x);
-    return f;
+    while count_down(&mut n) {
+        fill_step(&mut f, x);
+    }
+    f
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-void copy_backward_step(I& l_i, O& l_o)
+pub fn copy_backward_step<I, O>(l_i: &mut I, l_o: &mut O)
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\func{source}(\property{predecessor}(l_i))$ and
     //               $\func{sink}(\property{predecessor}(l_o))$
     //               are defined
-    l_i = predecessor(l_i);
-    l_o = predecessor(l_o);
-    sink(l_o) = source(l_i);
+    *l_i = l_i.predecessor();
+    *l_o = l_o.predecessor();
+    *l_o.sink() = l_i.source().clone();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-O copy_backward(I f_i, I l_i, O l_o)
+pub fn copy_backward<I, O>(f_i: &I, mut l_i: I, mut l_o: O) -> O
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{not\_overlapped\_backward}(f_i, l_i, l_o-(l_i-f_i), l_o)$
-    while (f_i != l_i) copy_backward_step(l_i, l_o);
-    return l_o;
+    while *f_i != l_i {
+        copy_backward_step(&mut l_i, &mut l_o);
+    }
+    l_o
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-pair<I, O> copy_backward_n(I l_i, DistanceType(I) n, O l_o)
+pub fn copy_backward_n<I, O>(mut l_i: I, mut n: I::DistanceType, mut l_o: O) -> Pair<I, O>
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
-    while (count_down(n)) copy_backward_step(l_i, l_o);
-    return pair<I, O>(l_i, l_o);
+    while count_down(&mut n) {
+        copy_backward_step(&mut l_i, &mut l_o);
+    }
+    Pair::new(l_i, l_o)
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-void reverse_copy_step(I& l_i, O& f_o)
+pub fn reverse_copy_step<I, O>(l_i: &mut I, f_o: &mut O)
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\func{source}(\func{predecessor}(l_i))$ and
     //               $\func{sink}(f_o)$ are defined
-    l_i = predecessor(l_i);
-    sink(f_o) = source(l_i);
-    f_o = successor(f_o);
+    *l_i = l_i.predecessor();
+    *f_o.sink() = l_i.source().clone();
+    *f_o = f_o.successor();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-void reverse_copy_backward_step(I& f_i, O& l_o)
+pub fn reverse_copy_backward_step<I, O>(f_i: &mut I, l_o: &mut O)
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\func{source}(f_i)$ and
     //               $\func{sink}(\property{predecessor}(l_o))$ are defined
-    l_o = predecessor(l_o);
-    sink(l_o) = source(f_i);
-    f_i = successor(f_i);
+    *l_o = l_o.predecessor();
+    *l_o.sink() = f_i.source().clone();
+    *f_i = f_i.successor();
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && BidirectionalIterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O))
-O reverse_copy(I f_i, I l_i, O f_o)
+pub fn reverse_copy<I, O>(f_i: &I, mut l_i: I, mut f_o: O) -> O
+where
+    I: Readable + BidirectionalIterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
 {
     // Precondition: $\property{not\_overlapped}(f_i, l_i, f_o, f_o+(l_i-f_i))$
-    while (f_i != l_i) reverse_copy_step(l_i, f_o);
-    return f_o;
+    while *f_i != l_i {
+        reverse_copy_step(&mut l_i, &mut f_o);
+    }
+    f_o
 }
 
-template<typename I, typename O>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        ValueType(I) == ValueType(O))
-O reverse_copy_backward(I f_i, I l_i, O l_o)
+pub fn reverse_copy_backward<I, O>(mut f_i: I, l_i: &I, mut l_o: O) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{not\_overlapped}(f_i, l_i, l_o-(l_i-f_i), l_o)$
-    while (f_i != l_i) reverse_copy_backward_step(f_i, l_o);
-    return l_o;
+    while f_i != *l_i {
+        reverse_copy_backward_step(&mut f_i, &mut l_o);
+    }
+    l_o
 }
 
-template<typename I, typename O, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        UnaryPredicate(P) && I == Domain(P))
-O copy_select(I f_i, I l_i, O f_t, P p)
+pub fn copy_select<I, O, P>(mut f_i: I, l_i: &I, mut f_t: O, p: &P) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I>,
 {
     // Precondition: $\property{not\_overlapped\_forward}(f_i, l_i, f_t, f_t+n_t)$
     // where $n_t$ is an upper bound for the number of iterators satisfying $p$
-    while (f_i != l_i)
-        if (p(f_i)) copy_step(f_i, f_t);
-        else f_i = successor(f_i);
-    return f_t;
+    while f_i != *l_i {
+        if p.call(&f_i) {
+            copy_step(&mut f_i, &mut f_t);
+        } else {
+            f_i = f_i.successor();
+        }
+    }
+    f_t
 }
 
-template<typename I, typename O, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O) && Iterator(O) &&
-        ValueType(I) == ValueType(O) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-O copy_if(I f_i, I l_i, O f_t, P p)
+pub fn copy_if<I, O, P>(f_i: I, l_i: &I, f_t: O, p: P) -> O
+where
+    I: Readable + Iterator,
+    O: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: same as for $\func{copy\_select}$
-    predicate_source<I, P> ps(p);
-    return copy_select(f_i, l_i, f_t, ps);
+    let ps = PredicateSource::new(p);
+    copy_select(f_i, l_i, f_t, &ps)
 }
 
+/*
 template<typename I, typename O_f, typename O_t, typename P>
     requires(Readable(I) && Iterator(I) &&
         Writable(O_f) && Iterator(O_f) &&
