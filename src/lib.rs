@@ -28,6 +28,8 @@
     clippy::type_repetition_in_bounds,
     clippy::use_self
 )]
+mod assertions;
+use assertions::assert;
 use num::{NumCast, One, Zero};
 mod integers;
 use integers::{
@@ -4817,104 +4819,108 @@ where
     }
 }
 
-/*
-pub fn rotate_forward_annotated<I>(f: I, m: I, l: I)
+pub fn rotate_forward_annotated<I>(mut f: I, mut m: I, l: &I)
 where
     I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    let a = m.sub(&f);
-    let b = l.sub(&m);
+    let mut a = m.clone().sub(&f);
+    let mut b = l.clone().sub(&m);
     loop {
-        let p = swap_ranges_bounded(f, m, m, l);
-        if p.m0 == m && p.m1 == l {
-            Assert(a == b);
+        let p = swap_ranges_bounded(f, &m, m.clone(), l);
+        if p.m0 == m && p.m1 == *l {
+            assert(a == b);
             return;
         }
         f = p.m0;
         if f == m {
-            Assert(b > a);
+            assert(b > a);
             m = p.m1;
-            b = b - a;
+            b = b - a.clone();
         } else {
-            Assert(a > b);
-            a = a - b;
+            assert(a > b);
+            a = a - b.clone();
         }
     }
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-void rotate_forward_step(I& f, I& m, I l)
+pub fn rotate_forward_step<I>(f: &mut I, m: &mut I, l: &I)
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    I c = m;
-    do {
-        swap_step(f, c);
-        if (f == m) m = c;
-    } while (c != l);
+    let mut c = m.clone();
+    loop {
+        swap_step(f, &mut c);
+        if f == m {
+            *m = c.clone();
+        }
+        if c == *l {
+            break;
+        }
+    }
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-I rotate_forward_nontrivial(I f, I m, I l)
+pub fn rotate_forward_nontrivial<I>(mut f: I, mut m: I, l: &I) -> I
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    rotate_forward_step(f, m, l);
-    I m_prime = f;
-    while (m != l) rotate_forward_step(f, m, l);
-    return m_prime;
+    rotate_forward_step(&mut f, &mut m, l);
+    let m_prime = f.clone();
+    while m != *l {
+        rotate_forward_step(&mut f, &mut m, l);
+    }
+    m_prime
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-I rotate_partial_nontrivial(I f, I m, I l)
+pub fn rotate_partial_nontrivial<I>(f: I, m: I, l: &I) -> I
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    return swap_ranges(m, l, f);
+    swap_ranges(m, l, f)
 }
 
 // swap_ranges_backward
 // rotate_partial_backward_nontrivial
 
-template<typename I, typename B>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B))
-I rotate_with_buffer_nontrivial(I f, I m, I l, B f_b)
+pub fn rotate_with_buffer_nontrivial<I, B>(f: I, m: I, l: &I, f_b: B) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
     // Precondition: $\property{mutable\_counted\_range}(f_b, l-f)$
-    B l_b = copy(f, m, f_b);
-    I m_prime = copy(m, l, f);
-    copy(f_b, l_b, m_prime);
-    return m_prime;
+    let l_b = copy(f.clone(), &m, f_b.clone());
+    let m_prime = copy(m, l, f);
+    copy(f_b, &l_b, m_prime.clone());
+    m_prime
 }
 
-template<typename I, typename B>
-    requires(Mutable(I) && BidirectionalIterator(I) &&
-        Mutable(B) && ForwardIterator(B))
-I rotate_with_buffer_backward_nontrivial(I f, I m, I l, B f_b)
+pub fn rotate_with_buffer_backward_nontrivial<I, B>(f: I, m: I, l: I, f_b: B) -> I
+where
+    I: Mutable + BidirectionalIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
     // Precondition: $\property{mutable\_counted\_range}(f_b, l-f)$
-    B l_b = copy(m, l, f_b);
-    copy_backward(f, m, l);
-    return copy(f_b, l_b, f);
+    let l_b = copy(m.clone(), &l, f_b.clone());
+    copy_backward(&f, m, l);
+    copy(f_b, &l_b, f)
 }
-
 
 // Section 10.5. Algorithm selection
 
-
-template<typename I>
-    requires(Mutable(I) && IndexedIterator(I))
-void reverse_indexed(I f, I l)
+pub fn reverse_indexed<I>(f: &I, l: I)
+where
+    I: Mutable + IndexedIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    reverse_n_indexed(f, l - f);
+    reverse_n_indexed(f, l.sub(f));
 }
 
-
+/*
 // temporary_buffer type
 
 template<typename I>
