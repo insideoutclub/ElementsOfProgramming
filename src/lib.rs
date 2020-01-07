@@ -2408,11 +2408,10 @@ where
 pub trait ForwardIterator: Iterator {}
 impl<T> ForwardIterator for T where T: Iterator {}
 
-pub fn find_adjacent_mismatch_forward<I, R, Domain>(mut f: I, l: &I, r: &R) -> I
+pub fn find_adjacent_mismatch_forward<I, R>(mut f: I, l: &I, r: &R) -> I
 where
-    I: Readable<ValueType = Domain> + ForwardIterator,
-    R: Relation<Domain = Domain>,
-    Domain: Regular,
+    I: Readable + ForwardIterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\func{readable\_bounded\_range}(f, l)$
     if f == *l {
@@ -2432,7 +2431,6 @@ pub fn partition_point_n<I, P>(mut f: I, mut n: I::DistanceType, p: &P) -> I
 where
     I: Readable + ForwardIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $\func{readable\_counted\_range}(f, n) \wedge \func{partitioned\_n}(f, n, p)$
@@ -2453,7 +2451,6 @@ pub fn partition_point<I, P>(f: I, l: I, p: &P) -> I
 where
     I: Readable + ForwardIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $\func{readable\_bounded\_range}(f, l) \wedge \func{partitioned}(f, l, p)$
@@ -2492,7 +2489,6 @@ pub fn lower_bound_n<I, R>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) ->
 where
     I: Readable + ForwardIterator,
     R: Relation<Domain = I::ValueType> + Regular,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
@@ -2531,7 +2527,6 @@ pub fn upper_bound_n<I, R>(f: I, n: I::DistanceType, a: &I::ValueType, r: &R) ->
 where
     I: Readable + ForwardIterator,
     R: Relation<Domain = I::ValueType> + Regular,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $\property{weak\_ordering(r)} \wedge \property{increasing\_counted\_range}(f, n, r)$
@@ -2561,7 +2556,6 @@ pub fn find_backward_if<I, P>(f: &I, mut l: I, p: &P) -> I
 where
     I: Readable + BidirectionalIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
     while l != *f && !p.call(l.predecessor().source()) {
@@ -2574,7 +2568,6 @@ pub fn find_backward_if_not<I, P>(f: &I, mut l: I, p: &P) -> I
 where
     I: Readable + BidirectionalIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition: $(f, l] \text{ is a readable bounded half-open on left range}$
     while l != *f && p.call(l.predecessor().source()) {
@@ -2591,7 +2584,6 @@ pub fn find_backward_if_unguarded<I, P>(mut l: I, p: &P) -> I
 where
     I: Readable + BidirectionalIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{some}(f, l, p)$
@@ -2609,7 +2601,6 @@ pub fn find_backward_if_not_unguarded<I, P>(mut l: I, p: &P) -> I
 where
     I: Readable + BidirectionalIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
-    I::ValueType: Regular,
 {
     // Precondition:
     // $(\exists f \in I)\,\property{readable\_bounded\_range}(f, l) \wedge \property{not\_all}(f, l, p)$
@@ -2912,7 +2903,6 @@ where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
     R: Relation<Domain = I0::ValueType>,
-    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -2925,7 +2915,6 @@ pub fn lexicographical_equal<I0, I1>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
 where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
-    I0::ValueType: Regular,
 {
     lexicographical_equivalent(f0, l0, f1, l1, &Equal::default())
 }
@@ -2962,7 +2951,6 @@ where
     C0: Readable + BifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BifurcateCoordinate,
     R: Relation<Domain = C0::ValueType>,
-    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
@@ -3000,7 +2988,6 @@ where
     C0: Readable + BidirectionalBifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
     R: Relation<Domain = C0::ValueType>,
-    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\property{equivalence}(r)$
@@ -3032,7 +3019,6 @@ pub fn bifurcate_equal<C0, C1>(c0: C0, c1: C1) -> bool
 where
     C0: Readable + BidirectionalBifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
-    C0::ValueType: Regular,
 {
     bifurcate_equivalent(c0, c1, &Equal::default())
 }
@@ -3042,7 +3028,6 @@ where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
     R: Relation<Domain = I0::ValueType>,
-    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -3069,7 +3054,7 @@ pub fn lexicographical_less<I0, I1>(f0: I0, l0: &I0, f1: I1, l1: &I1) -> bool
 where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
-    I0::ValueType: Regular + TotallyOrdered,
+    I0::ValueType: TotallyOrdered,
 {
     lexicographical_compare(f0, l0, f1, l1, &Less::default())
 }
@@ -3164,7 +3149,6 @@ where
     I0: Readable + Iterator,
     I1: Readable<ValueType = I0::ValueType> + Iterator,
     F: Compare3Way<Domain = I0::ValueType>,
-    I0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_bounded\_range}(f0, l0)$
     // Precondition: $\property{readable\_bounded\_range}(f1, l1)$
@@ -3194,7 +3178,6 @@ where
     C0: Readable + BifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BifurcateCoordinate,
     F: Compare3Way<Domain = C0::ValueType>,
-    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge \property{readable\_tree}(c1)$
     // Precondition: $\neg \func{empty}(c0) \wedge \neg \func{empty}(c1)$
@@ -3235,7 +3218,6 @@ where
     C0: Readable + BidirectionalBifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
     R: Relation<Domain = C0::ValueType>,
-    C0::ValueType: Regular,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge
     //                \property{readable\_tree}(c1) \wedge
@@ -3273,7 +3255,7 @@ pub fn bifurcate_less<C0, C1>(c0: C0, c1: C1) -> bool
 where
     C0: Readable + BidirectionalBifurcateCoordinate,
     C1: Readable<ValueType = C0::ValueType> + BidirectionalBifurcateCoordinate,
-    C0::ValueType: Regular + TotallyOrdered,
+    C0::ValueType: TotallyOrdered,
 {
     // Precondition: $\property{readable\_tree}(c0) \wedge
     //                \property{readable\_tree}(c1)
