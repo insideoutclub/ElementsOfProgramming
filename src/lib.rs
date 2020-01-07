@@ -1937,8 +1937,11 @@ where
     *x = x.successor();
 }
 
-pub trait Readable: Regular {
+pub trait Reference {
     type ValueType: Regular;
+}
+
+pub trait Readable: Reference + Regular {
     fn source(&self) -> &Self::ValueType;
 }
 
@@ -3707,7 +3710,20 @@ where
 {
     type Domain0 = I0;
     type Domain1 = I1;
-    fn call(&mut self, i0: &I0, i1: &I1) -> bool {
+    fn call(&mut self, i0: &Self::Domain0, i1: &Self::Domain1) -> bool {
+        self.r.call(i0.source(), i1.source())
+    }
+}
+
+impl<I0, I1, R> BinaryPredicate for RelationSource<I0, I1, R>
+where
+    I0: Readable,
+    I1: Readable<ValueType = I0::ValueType>,
+    R: Relation<Domain = I0::ValueType>,
+{
+    type InputType0 = I0;
+    type InputType1 = I1;
+    fn call(&self, i0: &Self::InputType0, i1: &Self::InputType1) -> bool {
         self.r.call(i0.source(), i1.source())
     }
 }
@@ -3913,8 +3929,7 @@ where
 //  Chapter 9. Copying
 //
 
-pub trait Writable {
-    type ValueType: Regular;
+pub trait Writable: Reference {
     fn sink(&mut self) -> &mut Self::ValueType;
 }
 
@@ -4206,306 +4221,340 @@ where
     split_copy(f_i, l_i, f_f, f_t, &ps)
 }
 
-/*
-template<typename I, typename O_f, typename O_t, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O_f) && Iterator(O_f) &&
-        Writable(O_t) && Iterator(O_t) &&
-        ValueType(I) == ValueType(O_f) &&
-        ValueType(I) == ValueType(O_t) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair<O_f, O_t> partition_copy_n(I f_i, DistanceType(I) n,
-                                O_f f_f, O_t f_t,
-                                P p)
+pub fn partition_copy_n<I, OF, OT, P>(
+    f_i: I,
+    n: I::DistanceType,
+    f_f: OF,
+    f_t: OT,
+    p: P,
+) -> Pair<OF, OT>
+where
+    I: Readable + Iterator,
+    OF: Writable<ValueType = I::ValueType> + Iterator,
+    OT: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: see $\func{partition_copy}$
-    predicate_source<I, P> ps(p);
-    return split_copy_n(f_i, n, f_f, f_t, ps);
+    let ps = PredicateSource::new(p);
+    split_copy_n(f_i, n, f_f, f_t, &ps)
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        Writable(O) && Iterator(O) &&
-        BinaryPredicate(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        I0 == InputType(R, 1) && I1 == InputType(R, 0))
-O combine_copy(I0 f_i0, I0 l_i0, I1 f_i1, I1 l_i1, O f_o, R r)
+pub trait BinaryPredicate {
+    type InputType0;
+    type InputType1;
+    fn call(&self, x: &Self::InputType0, y: &Self::InputType1) -> bool;
+}
+
+pub fn combine_copy<I0, I1, O, R>(
+    mut f_i0: I0,
+    l_i0: &I0,
+    mut f_i1: I1,
+    l_i1: &I1,
+    mut f_o: O,
+    r: &R,
+) -> O
+where
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    O: Writable<ValueType = I0::ValueType> + Iterator,
+    R: BinaryPredicate<InputType0 = I1, InputType1 = I0>,
 {
     // Precondition: see section 9.3 of Elements of Programming
-    while (f_i0 != l_i0 && f_i1 != l_i1)
-        if (r(f_i1, f_i0)) copy_step(f_i1, f_o);
-        else               copy_step(f_i0, f_o);
-    return copy(f_i1, l_i1, copy(f_i0, l_i0, f_o));
+    while f_i0 != *l_i0 && f_i1 != *l_i1 {
+        if r.call(&f_i1, &f_i0) {
+            copy_step(&mut f_i1, &mut f_o);
+        } else {
+            copy_step(&mut f_i0, &mut f_o);
+        }
+    }
+    copy(f_i1, l_i1, copy(f_i0, l_i0, f_o))
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        Writable(O) && Iterator(O) &&
-        BinaryPredicate(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        I0 == InputType(R, 1) && I1 = InputType(R, 0))
-triple<I0, I1, O> combine_copy_n(I0 f_i0, DistanceType(I0) n_i0,
-                                 I1 f_i1, DistanceType(I1) n_i1,
-                                 O f_o, R r) {
+pub fn combine_copy_n<I0, I1, O, R>(
+    mut f_i0: I0,
+    mut n_i0: I0::DistanceType,
+    mut f_i1: I1,
+    mut n_i1: I1::DistanceType,
+    mut f_o: O,
+    r: &R,
+) -> Triple<I0, I1, O>
+where
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    O: Writable<ValueType = I0::ValueType> + Iterator,
+    R: BinaryPredicate<InputType0 = I1, InputType1 = I0>,
+{
     // Precondition: see $\func{combine_copy}$
-    typedef triple<I0, I1, O> Triple;
-    while (true) {
-        if (zero(n_i0)) {
-            pair<I1, O> p = copy_n(f_i1, n_i1, f_o);
-            return Triple(f_i0, p.m0, p.m1);
+    loop {
+        if zero(&n_i0) {
+            let p = copy_n(f_i1, n_i1, f_o);
+            return Triple::new(f_i0, p.m0, p.m1);
         }
-        if (zero(n_i1)) {
-            pair<I0, O> p = copy_n(f_i0, n_i0, f_o);
-            return Triple(p.m0, f_i1, p.m1);
+        if zero(&n_i1) {
+            let p = copy_n(f_i0, n_i0, f_o);
+            return Triple::new(p.m0, f_i1, p.m1);
         }
-        if (r(f_i1, f_i0)) {
-            copy_step(f_i1, f_o);
+        if r.call(&f_i1, &f_i0) {
+            copy_step(&mut f_i1, &mut f_o);
             n_i1 = predecessor(n_i1);
-        } else             {
-            copy_step(f_i0, f_o);
+        } else {
+            copy_step(&mut f_i0, &mut f_o);
             n_i0 = predecessor(n_i0);
         }
     }
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && BidirectionalIterator(I0) &&
-        Readable(I1) && BidirectionalIterator(I1) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        BinaryPredicate(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        I0 == InputType(R, 1) && I1 == InputType(R, 0))
-O combine_copy_backward(I0 f_i0, I0 l_i0, I1 f_i1, I1 l_i1,
-                        O l_o, R r)
+pub fn combine_copy_backward<I0, I1, O, R>(
+    f_i0: &I0,
+    mut l_i0: I0,
+    f_i1: &I1,
+    mut l_i1: I1,
+    mut l_o: O,
+    r: &R,
+) -> O
+where
+    I0: Readable + BidirectionalIterator,
+    I1: Readable<ValueType = I0::ValueType> + BidirectionalIterator,
+    O: Writable<ValueType = I0::ValueType> + BidirectionalIterator,
+    R: BinaryPredicate<InputType0 = I1, InputType1 = I0>,
 {
     // Precondition: see section 9.3 of Elements of Programming
-    while (f_i0 != l_i0 && f_i1 != l_i1) {
-        if (r(predecessor(l_i1), predecessor(l_i0)))
-            copy_backward_step(l_i0, l_o);
-        else
-            copy_backward_step(l_i1, l_o);
+    while *f_i0 != l_i0 && *f_i1 != l_i1 {
+        if r.call(&l_i1.predecessor(), &l_i0.predecessor()) {
+            copy_backward_step(&mut l_i0, &mut l_o);
+        } else {
+            copy_backward_step(&mut l_i1, &mut l_o);
+        }
     }
-    return copy_backward(f_i0, l_i0,
-                         copy_backward(f_i1, l_i1, l_o));
+    copy_backward(f_i0, l_i0, copy_backward(f_i1, l_i1, l_o))
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && BidirectionalIterator(I0) &&
-        Readable(I1) && BidirectionalIterator(I1) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        BinaryPredicate(R) &&
-        ValueType(I0) == ValueType(O) && ValueType(I1) == ValueType(O) &&
-        I0 == InputType(R, 1) && I1 = InputType(R, 0))
-triple<I0, I1, O> combine_copy_backward_n(I0 l_i0, DistanceType(I0) n_i0,
-                           I1 l_i1, DistanceType(I1) n_i1, O l_o, R r) {
+pub fn combine_copy_backward_n<I0, I1, O, R>(
+    mut l_i0: I0,
+    mut n_i0: I0::DistanceType,
+    mut l_i1: I1,
+    mut n_i1: I1::DistanceType,
+    mut l_o: O,
+    r: &R,
+) -> Triple<I0, I1, O>
+where
+    I0: Readable + BidirectionalIterator,
+    I1: Readable<ValueType = I0::ValueType> + BidirectionalIterator,
+    O: Writable<ValueType = I0::ValueType> + BidirectionalIterator,
+    R: BinaryPredicate<InputType0 = I1, InputType1 = I0>,
+{
     // Precondition: see $\func{combine\_copy\_backward}$
-    typedef triple<I0, I1, O> Triple;
-    while (true) {
-        if (zero(n_i0)) {
-            pair<I1, O> p = copy_backward_n(l_i1, n_i1, l_o);
-            return Triple(l_i0, p.m0, p.m1);
+    loop {
+        if zero(&n_i0) {
+            let p = copy_backward_n(l_i1, n_i1, l_o);
+            return Triple::new(l_i0, p.m0, p.m1);
         }
-        if (zero(n_i1)) {
-            pair<I0, O> p = copy_backward_n(l_i0, n_i0, l_o);
-            return Triple(p.m0, l_i1, p.m1);
+        if zero(&n_i1) {
+            let p = copy_backward_n(l_i0, n_i0, l_o);
+            return Triple::new(p.m0, l_i1, p.m1);
         }
-        if (r(predecessor(l_i1), predecessor(l_i0))) {
-            copy_backward_step(l_i0, l_o);
+        if r.call(&l_i1.predecessor(), &l_i0.predecessor()) {
+            copy_backward_step(&mut l_i0, &mut l_o);
             n_i0 = predecessor(n_i0);
         } else {
-            copy_backward_step(l_i1, l_o);
+            copy_backward_step(&mut l_i1, &mut l_o);
             n_i1 = predecessor(n_i1);
         }
     }
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        Writable(O) && Iterator(O) &&
-        Relation(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        ValueType(I0) == Domain(R))
-O merge_copy(I0 f_i0, I0 l_i0, I1 f_i1, I1 l_i1, O f_o, R r)
+pub fn merge_copy<I0, I1, O, R>(f_i0: I0, l_i0: &I0, f_i1: I1, l_i1: &I1, f_o: O, r: R) -> O
+where
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    O: Writable<ValueType = I0::ValueType> + Iterator,
+    R: Relation<Domain = I0::ValueType>,
 {
     // Precondition: in addition to that for $\func{combine\_copy}$:
     // \hspace*{1em} $\property{weak\_ordering}(r) \wedge {}$
     // \hspace*{1em} $\func{increasing\_range}(f_{i_0}, l_{i_0}, r) \wedge
     //                \property{increasing\_range}(f_{i_1}, l_{i_1}, r)$
-    relation_source<I1, I0, R> rs(r);
-    return combine_copy(f_i0, l_i0, f_i1, l_i1, f_o, rs);
+    let rs = RelationSource::new(r);
+    combine_copy(f_i0, l_i0, f_i1, l_i1, f_o, &rs)
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && Iterator(I0) &&
-        Readable(I1) && Iterator(I1) &&
-        Writable(O) && Iterator(O) &&
-        Relation(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        ValueType(I0) == Domain(R))
-triple<I0, I1, O> merge_copy_n(I0 f_i0, DistanceType(I0) n_i0,
-                               I1 f_i1, DistanceType(I1) n_i1,
-                               O o, R r)
+pub fn merge_copy_n<I0, I1, O, R>(
+    f_i0: I0,
+    n_i0: I0::DistanceType,
+    f_i1: I1,
+    n_i1: I1::DistanceType,
+    o: O,
+    r: R,
+) -> Triple<I0, I1, O>
+where
+    I0: Readable + Iterator,
+    I1: Readable<ValueType = I0::ValueType> + Iterator,
+    O: Writable<ValueType = I0::ValueType> + Iterator,
+    R: Relation<Domain = I0::ValueType>,
 {
     // Precondition: see $\func{merge\_copy}$
-    relation_source<I1, I0, R> rs(r);
-    return combine_copy_n(f_i0, n_i0, f_i1, n_i1, o, rs);
+    let rs = RelationSource::new(r);
+    combine_copy_n(f_i0, n_i0, f_i1, n_i1, o, &rs)
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && BidirectionalIterator(I0) &&
-        Readable(I1) && BidirectionalIterator(I1) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        Relation(R) &&
-        ValueType(I0) == ValueType(O) &&
-        ValueType(I1) == ValueType(O) &&
-        ValueType(I0) == Domain(R))
-O merge_copy_backward(I0 f_i0, I0 l_i0, I1 f_i1, I1 l_i1, O l_o,
-                      R r)
+pub fn merge_copy_backward<I0, I1, O, R>(
+    f_i0: &I0,
+    l_i0: I0,
+    f_i1: &I1,
+    l_i1: I1,
+    l_o: O,
+    r: R,
+) -> O
+where
+    I0: Readable + BidirectionalIterator,
+    I1: Readable<ValueType = I0::ValueType> + BidirectionalIterator,
+    O: Writable<ValueType = I0::ValueType> + BidirectionalIterator,
+    R: Relation<Domain = I0::ValueType>,
 {
     // Precondition: in addition to that for $\func{combine\_copy\_backward}$:
     //               $\property{weak\_ordering}(r) \wedge {}$
     //               $\func{increasing\_range}(f_{i_0}, l_{i_0}, r) \wedge
     //                \property{increasing\_range}(f_{i_1}, l_{i_1}, r)$
-    relation_source<I1, I0, R> rs(r);
-    return combine_copy_backward(f_i0, l_i0, f_i1, l_i1, l_o,
-                                 rs);
+    let rs = RelationSource::new(r);
+    combine_copy_backward(f_i0, l_i0, f_i1, l_i1, l_o, &rs)
 }
 
-template<typename I0, typename I1, typename O, typename R>
-    requires(Readable(I0) && BidirectionalIterator(I0) &&
-        Readable(I1) && BidirectionalIterator(I1) &&
-        Writable(O) && BidirectionalIterator(O) &&
-        Relation(R) &&
-        ValueType(I0) == ValueType(O) && ValueType(I1) == ValueType(O) &&
-        ValueType(I0) == Domain(R))
-triple<I0, I1, O> merge_copy_backward_n(I0 l_i0, DistanceType(I0) n_i0,
-                           I1 l_i1, DistanceType(I1) n_i1, O l_o, R r) {
+pub fn merge_copy_backward_n<I0, I1, O, R>(
+    l_i0: I0,
+    n_i0: I0::DistanceType,
+    l_i1: I1,
+    n_i1: I1::DistanceType,
+    l_o: O,
+    r: R,
+) -> Triple<I0, I1, O>
+where
+    I0: Readable + BidirectionalIterator,
+    I1: Readable<ValueType = I0::ValueType> + BidirectionalIterator,
+    O: Writable<ValueType = I0::ValueType> + BidirectionalIterator,
+    R: Relation<Domain = I0::ValueType>,
+{
     // Precondition: see $\func{merge\_copy\_backward}$
-    relation_source<I1, I0, R> rs(r);
-    return combine_copy_backward_n(l_i0, n_i0, l_i1, n_i1, l_o, rs);
+    let rs = RelationSource::new(r);
+    combine_copy_backward_n(l_i0, n_i0, l_i1, n_i1, l_o, &rs)
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && Mutable(I1) &&
-        ValueType(I0) == ValueType(I1))
-void exchange_values(I0 x, I1 y)
+pub trait Mutable: Readable + Writable {}
+
+pub fn exchange_values<I0, I1>(x: &mut I0, y: &mut I1)
+where
+    I0: Mutable,
+    I1: Mutable<ValueType = I0::ValueType>,
 {
     // Precondition: $\func{deref}(x)$ and $\func{deref}(y)$ are defined
-    ValueType(I0) t = source(x);
-            sink(x) = source(y);
-            sink(y) = t;
+    let t = x.source().clone();
+    *x.sink() = y.source().clone();
+    *y.sink() = t;
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && ForwardIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-void swap_step(I0& f0, I1& f1)
+pub fn swap_step<I0, I1>(f0: &mut I0, f1: &mut I1)
+where
+    I0: Mutable + ForwardIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\func{deref}(f_0)$ and $\func{deref}(f_1)$ are defined
     exchange_values(f0, f1);
-    f0 = successor(f0);
-    f1 = successor(f1);
+    *f0 = f0.successor();
+    *f1 = f1.successor();
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && ForwardIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-I1 swap_ranges(I0 f0, I0 l0, I1 f1)
+pub fn swap_ranges<I0, I1>(mut f0: I0, l0: &I0, mut f1: I1) -> I1
+where
+    I0: Mutable + ForwardIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f_0, l_0)$
     // Precondition: $\property{mutable\_counted\_range}(f_1, l_0-f_0)$
-    while (f0 != l0) swap_step(f0, f1);
-    return f1;
+    while f0 != *l0 {
+        swap_step(&mut f0, &mut f1);
+    }
+    f1
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && ForwardIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-pair<I0, I1> swap_ranges_bounded(I0 f0, I0 l0, I1 f1, I1 l1)
+pub fn swap_ranges_bounded<I0, I1>(mut f0: I0, l0: &I0, mut f1: I1, l1: &I1) -> Pair<I0, I1>
+where
+    I0: Mutable + ForwardIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f_0, l_0)$
     // Precondition: $\property{mutable\_bounded\_range}(f_1, l_1)$
-    while (f0 != l0 && f1 != l1) swap_step(f0, f1);
-    return pair<I0, I1>(f0, f1);
+    while f0 != *l0 && f1 != *l1 {
+        swap_step(&mut f0, &mut f1);
+    }
+    Pair::new(f0, f1)
 }
 
-template<typename I0, typename I1, typename N>
-    requires(Mutable(I0) && ForwardIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Integer(N))
-pair<I0, I1> swap_ranges_n(I0 f0, I1 f1, N n)
+pub fn swap_ranges_n<I0, I1, N>(mut f0: I0, mut f1: I1, mut n: N) -> Pair<I0, I1>
+where
+    I0: Mutable + ForwardIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
+    N: Integer,
 {
     // Precondition: $\property{mutable\_counted\_range}(f_0, n)$
     // Precondition: $\property{mutable\_counted\_range}(f_1, n)$
-    while (count_down(n)) swap_step(f0, f1);
-    return pair<I0, I1>(f0, f1);
+    while count_down(&mut n) {
+        swap_step(&mut f0, &mut f1);
+    }
+    Pair::new(f0, f1)
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && BidirectionalIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-void reverse_swap_step(I0& l0, I1& f1)
+pub fn reverse_swap_step<I0, I1>(l0: &mut I0, f1: &mut I1)
+where
+    I0: Mutable + BidirectionalIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\func{deref}(\func{predecessor}(l_0))$ and
     //               $\func{deref}(f_1)$ are defined
-    l0 = predecessor(l0);
+    *l0 = l0.predecessor();
     exchange_values(l0, f1);
-    f1 = successor(f1);
+    *f1 = f1.successor();
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && BidirectionalIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-I1 reverse_swap_ranges(I0 f0, I0 l0, I1 f1)
+pub fn reverse_swap_ranges<I0, I1>(f0: &I0, mut l0: I0, mut f1: I1) -> I1
+where
+    I0: Mutable + BidirectionalIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f_0, l_0)$
     // Precondition: $\property{mutable\_counted\_range}(f_1, l_0-f_0)$
-    while (f0 != l0) reverse_swap_step(l0, f1);
-    return f1;
+    while *f0 != l0 {
+        reverse_swap_step(&mut l0, &mut f1);
+    }
+    f1
 }
 
-template<typename I0, typename I1>
-    requires(Mutable(I0) && BidirectionalIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1))
-pair<I0, I1>reverse_swap_ranges_bounded(I0 f0, I0 l0,
-                                        I1 f1, I1 l1)
+pub fn reverse_swap_ranges_bounded<I0, I1>(f0: &I0, mut l0: I0, mut f1: I1, l1: &I1) -> Pair<I0, I1>
+where
+    I0: Mutable + BidirectionalIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f_0, l_0)$
     // Precondition:  $\property{mutable\_bounded\_range}(f_1, l_1)$
-    while (f0 != l0 && f1 != l1)
-        reverse_swap_step(l0, f1);
-    return pair<I0, I1>(l0, f1);
+    while *f0 != l0 && f1 != *l1 {
+        reverse_swap_step(&mut l0, &mut f1);
+    }
+    Pair::new(l0, f1)
 }
 
-template<typename I0, typename I1, typename N>
-    requires(Mutable(I0) && BidirectionalIterator(I0) &&
-        Mutable(I1) && ForwardIterator(I1) &&
-        ValueType(I0) == ValueType(I1) &&
-        Integer(N))
-pair<I0, I1> reverse_swap_ranges_n(I0 l0, I1 f1, N n)
+pub fn reverse_swap_ranges_n<I0, I1, N>(mut l0: I0, mut f1: I1, mut n: N) -> Pair<I0, I1>
+where
+    I0: Mutable + BidirectionalIterator,
+    I1: Mutable<ValueType = I0::ValueType> + ForwardIterator,
+    N: Integer,
 {
     // Precondition: $\property{mutable\_counted\_range}(l_0-n, n)$
     // Precondition: $\property{mutable\_counted\_range}(f_1, n)$
-    while (count_down(n)) reverse_swap_step(l0, f1);
-    return pair<I0, I1>(l0, f1);
+    while count_down(&mut n) {
+        reverse_swap_step(&mut l0, &mut f1);
+    }
+    Pair::new(l0, f1)
 }
 
-
+/*
 //
 //  Chapter 10. Rearrangements
 //
