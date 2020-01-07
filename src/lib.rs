@@ -4554,238 +4554,291 @@ where
     Pair::new(l0, f1)
 }
 
-/*
 //
 //  Chapter 10. Rearrangements
 //
 
-
-template<typename I, typename F>
-    requires(Mutable(I) && Transformation(F) && I == Domain(F))
-void cycle_to(I i, F f)
+pub fn cycle_to<I, F>(mut i: I, f: &F)
+where
+    I: Mutable,
+    F: Transformation<Domain = I>,
 {
     // Precondition: The orbit of $i$ under $f$ is circular
     // Precondition: $(\forall n \in \mathbb{N})\,\func{deref}(f^n(i))$ is defined
-    I k = f(i);
-    while (k != i) {
-        exchange_values(i, k);
-        k = f(k);
+    let mut k = f.call(i.clone());
+    while k != i {
+        exchange_values(&mut i, &mut k);
+        k = f.call(k);
     }
 }
 
 // Exercise 10.3: cycle_to variant doing 2n-1 assignments
 
-
-template<typename I, typename F>
-    requires(Mutable(I) && Transformation(F) && I == Domain(F))
-void cycle_from(I i, F f)
+pub fn cycle_from<I, F>(i: &I, f: &F)
+where
+    I: Mutable,
+    F: Transformation<Domain = I>,
 {
     // Precondition: The orbit of $i$ under $f$ is circular
     // Precondition: $(\forall n \in \mathbb{N})\,\func{deref}(f^n(i))$ is defined
-    ValueType(I) tmp = source(i);
-    I j = i;
-    I k = f(i);
-    while (k != i) {
-        sink(j) = source(k);
-        j = k;
-        k = f(k);
+    let tmp = i.source().clone();
+    let mut j = i.clone();
+    let mut k = f.call(i.clone());
+    while k != *i {
+        *j.sink() = k.source().clone();
+        j = k.clone();
+        k = f.call(k);
     }
-    sink(j) = tmp;
+    *j.sink() = tmp;
 }
-
 
 // Exercise 10.4: arbitrary rearrangement using array of n boolean values
 // Exercise 10.5: arbitrary rearrangement using total ordering on iterators
 
+pub trait IndexedIterator: ForwardIterator {}
 
-template<typename I>
-    requires(Mutable(I) && IndexedIterator(I))
-void reverse_n_indexed(I f, DistanceType(I) n)
+pub fn reverse_n_indexed<I>(f: &I, n: I::DistanceType)
+where
+    I: Mutable + IndexedIterator,
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n)$
-    DistanceType(I) i(0);
-    n = predecessor(n);
-    while (i < n) {
+    let mut i = I::DistanceType::zero();
+    let mut n = predecessor(n);
+    while i < n {
         // $n = (n_\text{original} - 1) - i$
-        exchange_values(f + i, f + n);
+        exchange_values(&mut f.clone().add(i.clone()), &mut f.clone().add(n.clone()));
         i = successor(i);
         n = predecessor(n);
     }
 }
 
-template<typename I>
-    requires(Mutable(I) && BidirectionalIterator(I))
-void reverse_bidirectional(I f, I l)
+pub fn reverse_bidirectional<I>(mut f: I, mut l: I)
+where
+    I: Mutable + BidirectionalIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    while (true) {
-        if (f == l) return;
-        l = predecessor(l);
-        if (f == l) return;
-        exchange_values(f, l);
-        f = successor(f);
+    loop {
+        if f == l {
+            return;
+        }
+        l = l.predecessor();
+        if f == l {
+            return;
+        }
+        exchange_values(&mut f, &mut l);
+        f = f.successor();
     }
 }
 
-template<typename I>
-    requires(Mutable(I) && BidirectionalIterator(I))
-void reverse_n_bidirectional(I f, I l, DistanceType(I) n)
+pub fn reverse_n_bidirectional<I>(f: I, l: I, n: I::DistanceType)
+where
+    I: Mutable + BidirectionalIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge 0 \leq n \leq l - f$
     reverse_swap_ranges_n(l, f, half_nonnegative(n));
 }
 
-template<typename I, typename B>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && BidirectionalIterator(B) &&
-        ValueType(I) == ValueType(B))
-I reverse_n_with_buffer(I f_i, DistanceType(I) n, B f_b)
+pub fn reverse_n_with_buffer<I, B>(f_i: I, n: I::DistanceType, f_b: B) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{mutable\_counted\_range}(f_i, n)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n)$
-    return reverse_copy(f_b, copy_n(f_i, n, f_b).m1, f_i);
+    reverse_copy(&f_b.clone(), copy_n(f_i.clone(), n, f_b).m1, f_i)
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-I reverse_n_forward(I f, DistanceType(I) n)
+pub fn reverse_n_forward<I>(f: I, n: I::DistanceType) -> I
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n)$
-    typedef DistanceType(I) N;
-    if (n < N(2)) return f + n;
-    N h = half_nonnegative(n);
-    N n_mod_2 = n - twice(h);
-    I m = reverse_n_forward(f, h) + n_mod_2;
-    I l = reverse_n_forward(m, h);
+    if n < I::DistanceType::two() {
+        return f.add(n);
+    }
+    let h = half_nonnegative(n.clone());
+    let n_mod_2 = n - twice(h.clone());
+    let m = reverse_n_forward(f.clone(), h.clone()).add(n_mod_2);
+    let l = reverse_n_forward(m.clone(), h.clone());
     swap_ranges_n(f, m, h);
-    return l;
+    l
 }
 
-template<typename I, typename B>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && BidirectionalIterator(B) &&
-        ValueType(I) == ValueType(B))
-I reverse_n_adaptive(I f_i, DistanceType(I) n_i,
-                     B f_b, DistanceType(I) n_b)
+pub fn reverse_n_adaptive<I, B>(f_i: I, n_i: I::DistanceType, f_b: B, n_b: I::DistanceType) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + BidirectionalIterator,
 {
     // Precondition: $\property{mutable\_counted\_range}(f_i, n_i)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n_b)$
-    typedef DistanceType(I) N;
-    if (n_i < N(2))
-        return f_i + n_i;
-    if (n_i <= n_b)
+    if n_i < I::DistanceType::two() {
+        return f_i.add(n_i);
+    }
+    if n_i <= n_b {
         return reverse_n_with_buffer(f_i, n_i, f_b);
-    N h_i = half_nonnegative(n_i);
-    N n_mod_2 = n_i - twice(h_i);
-    I m_i = reverse_n_adaptive(f_i, h_i, f_b, n_b) + n_mod_2;
-    I l_i = reverse_n_adaptive(m_i, h_i, f_b, n_b);
+    }
+    let h_i = half_nonnegative(n_i.clone());
+    let n_mod_2 = n_i - twice(h_i.clone());
+    let m_i = reverse_n_adaptive(f_i.clone(), h_i.clone(), f_b.clone(), n_b.clone()).add(n_mod_2);
+    let l_i = reverse_n_adaptive(m_i.clone(), h_i.clone(), f_b, n_b);
     swap_ranges_n(f_i, m_i, h_i);
-    return l_i;
+    l_i
 }
 
-template<typename I>
-    requires(RandomAccessIterator(I))
-struct k_rotate_from_permutation_random_access
-{
-    DistanceType(I) k;
-    DistanceType(I) n_minus_k;
-    I m_prime;
-    k_rotate_from_permutation_random_access(I f, I m, I l) :
-        k(l - m), n_minus_k(m - f), m_prime(f + (l - m))
-    {
-        // Precondition: $\property{bounded\_range}(f, l) \wedge m \in [f, l)$
-    }
-    I operator()(I x)
-    {
-        // Precondition: $x \in [f, l)$
-        if (x < m_prime) return x + n_minus_k;
-        else             return x - k;
-    }
-};
+pub trait RandomAccessIterator: IndexedIterator + BidirectionalIterator + TotallyOrdered {}
 
-template<typename I>
-    requires(IndexedIterator(I))
-struct k_rotate_from_permutation_indexed
+pub struct KRotateFromPermutationRandomAccess<I>
+where
+    I: RandomAccessIterator,
 {
-    DistanceType(I) k;
-    DistanceType(I) n_minus_k;
-    I f;
-    k_rotate_from_permutation_indexed(I f, I m, I l) :
-        k(l - m), n_minus_k(m - f), f(f)
-    {
-        // Precondition: $\property{bounded\_range}(f, l) \wedge m \in [f, l)$
-    }
-    I operator()(I x)
-    {
-        // Precondition: $x \in [f, l)$
-        DistanceType(I) i = x - f;
-        if (i < k) return x + n_minus_k;
-        else       return f + (i - k);
-    }
-};
+    k: I::DistanceType,
+    n_minus_k: I::DistanceType,
+    m_prime: I,
+}
 
-template<typename I, typename F>
-    requires(Mutable(I) && IndexedIterator(I) &&
-        Transformation(F) && I == Domain(F))
-I rotate_cycles(I f, I m, I l, F from)
+impl<I> KRotateFromPermutationRandomAccess<I>
+where
+    I: RandomAccessIterator,
+{
+    pub fn new(f: I, m: &I, l: I) -> Self {
+        // Precondition: $\property{bounded\_range}(f, l) \wedge m \in [f, l)$
+        Self {
+            k: l.clone().sub(m),
+            n_minus_k: m.clone().sub(&f),
+            m_prime: f.add(l.sub(m)),
+        }
+    }
+}
+
+impl<I> Transformation for KRotateFromPermutationRandomAccess<I>
+where
+    I: RandomAccessIterator,
+{
+    type Domain = I;
+    type DistanceType = I::DistanceType;
+    fn call(&self, x: Self::Domain) -> Self::Domain {
+        // Precondition: $x \in [f, l)$
+        if x < self.m_prime {
+            x.add(self.n_minus_k.clone())
+        } else {
+            sub(x, self.k.clone())
+        }
+    }
+}
+
+pub struct KRotateFromPermutationIndexed<I>
+where
+    I: IndexedIterator,
+{
+    k: I::DistanceType,
+    n_minus_k: I::DistanceType,
+    f: I,
+}
+
+impl<I> KRotateFromPermutationIndexed<I>
+where
+    I: IndexedIterator,
+{
+    pub fn new(f: I, m: I, l: I) -> Self {
+        // Precondition: $\property{bounded\_range}(f, l) \wedge m \in [f, l)$
+        Self {
+            k: l.sub(&m),
+            n_minus_k: m.sub(&f),
+            f,
+        }
+    }
+}
+
+impl<I> Transformation for KRotateFromPermutationIndexed<I>
+where
+    I: IndexedIterator,
+{
+    type Domain = I;
+    type DistanceType = I::DistanceType;
+    fn call(&self, x: Self::Domain) -> Self::Domain {
+        // Precondition: $x \in [f, l)$
+        let i = x.clone().sub(&self.f);
+        if i < self.k {
+            x.add(self.n_minus_k.clone())
+        } else {
+            self.f.clone().add(i - self.k.clone())
+        }
+    }
+}
+
+pub fn rotate_cycles<I, F>(f: I, m: &I, l: I, from: &F) -> I
+where
+    I: Mutable + IndexedIterator,
+    I::DistanceType: EuclideanSemiring,
+    F: Transformation<Domain = I>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge m \in [f, l]$
     // Precondition: $from$ is a from-permutation on $[f, l)$
-    typedef DistanceType(I) N;
-    N d = gcd<N, N>(m - f, l - m);
-    while (count_down(d)) cycle_from(f + d, from);
-    return f + (l - m);
+    let mut d = gcd(m.clone().sub(&f), l.clone().sub(m));
+    while count_down(&mut d) {
+        cycle_from(&f.clone().add(d.clone()), from);
+    }
+    f.add(l.sub(m))
 }
 
-template<typename I>
-    requires(Mutable(I) && IndexedIterator(I))
-I rotate_indexed_nontrivial(I f, I m, I l)
+pub fn rotate_indexed_nontrivial<I>(f: I, m: &I, l: I) -> I
+where
+    I: Mutable + IndexedIterator,
+    I::DistanceType: EuclideanSemiring,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    k_rotate_from_permutation_indexed<I> p(f, m, l);
-    return rotate_cycles(f, m, l, p);
+    let p = KRotateFromPermutationIndexed::new(f.clone(), m.clone(), l.clone());
+    rotate_cycles(f, m, l, &p)
 }
 
-template<typename I>
-    requires(Mutable(I) && RandomAccessIterator(I))
-I rotate_random_access_nontrivial(I f, I m, I l)
+pub fn rotate_random_access_nontrivial<I>(f: I, m: &I, l: I) -> I
+where
+    I: Mutable + RandomAccessIterator,
+    I::DistanceType: EuclideanSemiring,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    k_rotate_from_permutation_random_access<I> p(f, m, l);
-    return rotate_cycles(f, m, l, p);
+    let p = KRotateFromPermutationRandomAccess::new(f.clone(), m, l.clone());
+    rotate_cycles(f, m, l, &p)
 }
 
-
-template<typename I>
-    requires(Mutable(I) && BidirectionalIterator(I))
-I rotate_bidirectional_nontrivial(I f, I m, I l)
+pub fn rotate_bidirectional_nontrivial<I>(f: I, m: &I, l: I) -> I
+where
+    I: Mutable + BidirectionalIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    reverse_bidirectional(f, m);
-    reverse_bidirectional(m, l);
-    pair<I, I> p = reverse_swap_ranges_bounded(m, l, f, m);
-    reverse_bidirectional(p.m1, p.m0);
-    if (m == p.m0) return p.m1;
-    else           return p.m0;
+    reverse_bidirectional(f.clone(), m.clone());
+    reverse_bidirectional(m.clone(), l.clone());
+    let p = reverse_swap_ranges_bounded(m, l, f, m);
+    reverse_bidirectional(p.m1.clone(), p.m0.clone());
+    if *m == p.m0 {
+        p.m1
+    } else {
+        p.m0
+    }
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-void rotate_forward_annotated(I f, I m, I l)
+/*
+pub fn rotate_forward_annotated<I>(f: I, m: I, l: I)
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-                                      DistanceType(I) a = m - f;
-                                      DistanceType(I) b = l - m;
-    while (true) {
-        pair<I, I> p = swap_ranges_bounded(f, m, m, l);
-        if (p.m0 == m && p.m1 == l) { Assert(a == b);
+    let a = m.sub(&f);
+    let b = l.sub(&m);
+    loop {
+        let p = swap_ranges_bounded(f, m, m, l);
+        if p.m0 == m && p.m1 == l {
+            Assert(a == b);
             return;
         }
         f = p.m0;
-        if (f == m) {                 Assert(b > a);
-            m = p.m1;                 b = b - a;
-        } else {                      Assert(a > b);
-                                      a = a - b;
+        if f == m {
+            Assert(b > a);
+            m = p.m1;
+            b = b - a;
+        } else {
+            Assert(a > b);
+            a = a - b;
         }
     }
 }
