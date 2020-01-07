@@ -3402,8 +3402,7 @@ where
     t
 }
 
-pub trait UnaryPseudoPredicate {
-    type Domain;
+pub trait UnaryPseudoPredicate: UnaryPredicate {
     fn call(&mut self, x: &Self::Domain) -> bool;
 }
 
@@ -3418,7 +3417,7 @@ enum SplitLinkedState {
 pub fn split_linked<I, S, Pred>(
     mut f: I,
     l: &I,
-    mut p: Pred,
+    p: &Pred,
     set_link: S,
 ) -> Pair<Pair<I, I>, Pair<I, I>>
 where
@@ -3638,7 +3637,6 @@ where
     I: Readable,
     P: UnaryPseudoPredicate<Domain = I::ValueType>,
 {
-    type Domain = I;
     fn call(&mut self, i: &I) -> bool {
         self.p.call(i.source())
     }
@@ -3664,7 +3662,7 @@ where
 {
     // Precondition: $\property{bounded\_range}(f, l)$
     let ps = PredicateSource::new(p);
-    split_linked(f, l, ps, set_link)
+    split_linked(f, l, &ps, set_link)
 }
 
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -4148,55 +4146,67 @@ where
     copy_select(f_i, l_i, f_t, &ps)
 }
 
-/*
-template<typename I, typename O_f, typename O_t, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O_f) && Iterator(O_f) &&
-        Writable(O_t) && Iterator(O_t) &&
-        ValueType(I) == ValueType(O_f) &&
-        ValueType(I) == ValueType(O_t) &&
-        UnaryPredicate(P) && I == Domain(P))
-pair<O_f, O_t> split_copy(I f_i, I l_i, O_f f_f, O_t f_t,
-                          P p)
+pub fn split_copy<I, OF, OT, P>(
+    mut f_i: I,
+    l_i: &I,
+    mut f_f: OF,
+    mut f_t: OT,
+    p: &P,
+) -> Pair<OF, OT>
+where
+    I: Readable + Iterator,
+    OF: Writable<ValueType = I::ValueType> + Iterator,
+    OT: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I>,
 {
     // Precondition: see section 9.3 of Elements of Programming
-    while (f_i != l_i)
-        if (p(f_i)) copy_step(f_i, f_t);
-        else        copy_step(f_i, f_f);
-    return pair<O_f, O_t>(f_f, f_t);
+    while f_i != *l_i {
+        if p.call(&f_i) {
+            copy_step(&mut f_i, &mut f_t);
+        } else {
+            copy_step(&mut f_i, &mut f_f);
+        }
+    }
+    Pair::new(f_f, f_t)
 }
 
-template<typename I, typename O_f, typename O_t, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O_f) && Iterator(O_f) &&
-        Writable(O_t) && Iterator(O_t) &&
-        ValueType(I) == ValueType(O_f) &&
-        ValueType(I) == ValueType(O_t) &&
-        UnaryPredicate(P) && I == Domain(P))
-pair<O_f, O_t> split_copy_n(I f_i, DistanceType(I) n_i, O_f f_f, O_t f_t, P p)
+pub fn split_copy_n<I, OF, OT, P>(
+    mut f_i: I,
+    mut n_i: I::DistanceType,
+    mut f_f: OF,
+    mut f_t: OT,
+    p: &P,
+) -> Pair<OF, OT>
+where
+    I: Readable + Iterator,
+    OF: Writable<ValueType = I::ValueType> + Iterator,
+    OT: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I>,
 {
     // Precondition: see exercise 9.2 of Elements of Programming
-    while (count_down(n_i))
-        if (p(f_i)) copy_step(f_i, f_t);
-        else        copy_step(f_i, f_f);
-    return pair<O_f, O_t>(f_f, f_t);
+    while count_down(&mut n_i) {
+        if p.call(&f_i) {
+            copy_step(&mut f_i, &mut f_t);
+        } else {
+            copy_step(&mut f_i, &mut f_f);
+        }
+    }
+    Pair::new(f_f, f_t)
 }
 
-template<typename I, typename O_f, typename O_t, typename P>
-    requires(Readable(I) && Iterator(I) &&
-        Writable(O_f) && Iterator(O_f) &&
-        Writable(O_t) && Iterator(O_t) &&
-        ValueType(I) == ValueType(O_f) &&
-        ValueType(I) == ValueType(O_t) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair<O_f, O_t> partition_copy(I f_i, I l_i, O_f f_f, O_t f_t,
-                              P p)
+pub fn partition_copy<I, OF, OT, P>(f_i: I, l_i: &I, f_f: OF, f_t: OT, p: P) -> Pair<OF, OT>
+where
+    I: Readable + Iterator,
+    OF: Writable<ValueType = I::ValueType> + Iterator,
+    OT: Writable<ValueType = I::ValueType> + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: same as $\func{split\_copy}$
-    predicate_source<I, P> ps(p);
-    return split_copy(f_i, l_i, f_f, f_t, ps);
+    let ps = PredicateSource::new(p);
+    split_copy(f_i, l_i, f_f, f_t, &ps)
 }
 
+/*
 template<typename I, typename O_f, typename O_t, typename P>
     requires(Readable(I) && Iterator(I) &&
         Writable(O_f) && Iterator(O_f) &&
