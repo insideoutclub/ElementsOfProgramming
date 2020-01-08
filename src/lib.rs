@@ -28,18 +28,21 @@
     clippy::type_repetition_in_bounds,
     clippy::use_self
 )]
+use num::{NumCast, One, Zero};
+use std::marker::PhantomData;
+#[macro_use]
+extern crate typenum;
+use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2, P3, P4, Z0};
+
 mod assertions;
 use assertions::assert;
-use num::{NumCast, One, Zero};
+mod intrinsics;
+use intrinsics::construct;
 mod integers;
 use integers::{
     binary_scale_up_nonnegative, even, half_nonnegative, odd, one, predecessor, successor, twice,
     zero, Integer, Regular,
 };
-use std::marker::PhantomData;
-#[macro_use]
-extern crate typenum;
-use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2, P3, P4, Z0};
 
 //
 //  Chapter 1. Foundations
@@ -4920,6 +4923,42 @@ where
     reverse_n_indexed(f, l.sub(f));
 }
 
+pub trait ConstructAll<I>
+where
+    I: Writable + ForwardIterator,
+{
+    fn construct_all(f: I, l: &I);
+}
+
+impl<I> ConstructAll<I> for True
+where
+    I: Writable + ForwardIterator,
+{
+    fn construct_all(mut f: I, l: &I) {
+        // Precondition:
+        // $(\forall i \in [f, l)) \func{sink}(i) \text{refers to raw memory, not an object}$
+        // Postcondition:
+        // $(\forall i \in [f, l)) \func{sink}(i) \text{is in a partially-formed state}$
+        // We assume if an iterator is writeable, its value can be constructed
+        while f != *l {
+            //construct(f.sink());
+            f = f.successor();
+        }
+    }
+}
+
+impl<I> ConstructAll<I> for False
+where
+    I: Writable + ForwardIterator,
+{
+    fn construct_all(_: I, _: &I) {
+        // Precondition:
+        // $(\forall i \in [f, l)) \func{sink}(i) \text{is in a partially-formed state}$
+        // Postcondition:
+        // $(\forall i \in [f, l)) \func{sink}(i) \text{is in a partially-formed state}$
+    }
+}
+
 /*
 // temporary_buffer type
 
@@ -4996,28 +5035,113 @@ void destroy_all(I /*f*/, I /*l*/, false_type)
     // Postcondition:
     // $(\forall i \in [f, l)) \func{sink}(i) \text{is in a partially-formed state}$
 }
+*/
 
 // NeedsConstruction and NeedsDestruction should be overloaded for every POD type
 
-template<typename T>
-    requires(Regular(T))
-struct temporary_buffer
+struct Unique<T> {
+    ptr: *const T,
+    _marker: PhantomData<T>,
+}
+
+pub struct TemporaryBuffer<T>
+where
+    T: Regular,
 {
-    typedef pointer(T) P;
-    typedef DistanceType(P) N;
-    P p;
-    N n;
-    temporary_buffer(N n_) : n(n_)
-    {
-        while (true) {
-            p = P(malloc(n * sizeof(T)));
-            if (p != P(0)) {
-                construct_all(p, p + n);
-                return;
+    p: Unique<T>,
+    n: usize,
+}
+
+use std::alloc::{alloc, Layout};
+use std::mem::{align_of, size_of};
+
+/*
+impl<T> Reference for *mut T
+where
+    T: Regular,
+{
+    type ValueType = T;
+}
+
+impl<T> Writable for *mut T
+where
+    T: Regular,
+{
+    fn sink(&mut self) -> &mut Self::ValueType {
+        unsafe { self.as_mut().unwrap() }
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub struct Pointer<T> {
+    p: *mut T,
+}
+
+impl<T> Default for Pointer<T> {
+    fn default() -> Self {
+        Self {
+            p: std::ptr::null_mut(),
+        }
+    }
+}
+
+impl<T> Regular for Pointer<T>
+where
+    T: Regular,
+{
+    type UnderlyingType = *mut T;
+}
+
+impl<T> Iterator for Pointer<T>
+where
+    T: Regular,
+{
+    type DistanceType = usize;
+    fn successor(&self) -> Self {
+        Self {
+            p: unsafe { self.p.add(1) },
+        }
+    }
+}
+
+impl<T> Reference for Pointer<T>
+where
+    T: Regular,
+{
+    type ValueType = T;
+}
+*/
+
+impl<T> TemporaryBuffer<T>
+where
+    T: Regular,
+{
+    #[must_use]
+    pub fn new(mut n: usize) -> Self {
+        let (elem_size, align) = (size_of::<T>(), align_of::<T>());
+        loop {
+            let layout = Layout::from_size_align(elem_size * n, align).unwrap();
+            unsafe {
+                let p = alloc(layout) as *mut T;
+                if !p.is_null() {
+                    for i in 0..n {
+                        std::ptr::write(p.add(i), T::default());
+                    }
+                    return Self {
+                        p: Unique {
+                            ptr: p,
+                            _marker: PhantomData,
+                        },
+                        n,
+                    };
+                }
             }
             n = half_nonnegative(n);
         }
     }
+}
+
+/*
     ~temporary_buffer()
     {
         destroy_all(p, p + n);

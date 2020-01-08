@@ -27,6 +27,10 @@ impl Regular for i32 {
     type UnderlyingType = i32;
 }
 
+impl Regular for usize {
+    type UnderlyingType = usize;
+}
+
 pub trait Integer:
     BitAnd<Self, Output = Self>
     + Div<Self, Output = Self>
