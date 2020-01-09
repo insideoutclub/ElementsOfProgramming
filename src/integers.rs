@@ -31,6 +31,10 @@ impl Regular for usize {
     type UnderlyingType = usize;
 }
 
+impl Regular for isize {
+    type UnderlyingType = isize;
+}
+
 pub trait Integer:
     BitAnd<Self, Output = Self>
     + Div<Self, Output = Self>

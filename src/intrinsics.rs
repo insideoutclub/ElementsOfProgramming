@@ -16,8 +16,6 @@
 // by Alexander Stepanov and Paul McJones
 // Addison-Wesley Professional, 2009
 
-use std::mem::MaybeUninit;
-
 /*
 #ifndef EOP_INTRINSICS
 #define EOP_INTRINSICS
@@ -56,6 +54,7 @@ pointer(T) addressof(T& x)
 
 // In-place construction and destruction (not in Appendix B.2)
 
+/*
 pub fn construct<T>(p: &mut MaybeUninit<T>)
 where
     T: super::Regular,
@@ -64,6 +63,7 @@ where
     // Postcondition: $p$ is in a default-constructed state
     *p = MaybeUninit::new(T::default());
 }
+*/
 
 /*
 template<typename T, typename U>

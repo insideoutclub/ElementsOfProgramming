@@ -36,9 +36,8 @@ use typenum::{private::IsLessPrivate, Cmp, Compare, False, IsLess, True, P1, P2,
 
 mod assertions;
 use assertions::assert;
-mod intrinsics;
-use intrinsics::construct;
 mod integers;
+mod intrinsics;
 use integers::{
     binary_scale_up_nonnegative, even, half_nonnegative, odd, one, predecessor, successor, twice,
     zero, Integer, Regular,
@@ -2413,7 +2412,16 @@ where
 
 // Exercise 6.6: partitioned_n
 
-pub trait ForwardIterator: Iterator {}
+pub trait ForwardIterator: Iterator {
+    fn rotate_nontrivial(self, m: Self, l: Self) -> Self
+    where
+        Self: Mutable,
+    {
+        // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
+        rotate_forward_nontrivial(self, m, &l)
+    }
+}
+
 impl<T> ForwardIterator for T where T: Iterator {}
 
 pub fn find_adjacent_mismatch_forward<I, R>(mut f: I, l: &I, r: &R) -> I
@@ -2546,6 +2554,13 @@ where
 
 pub trait BidirectionalIterator: ForwardIterator {
     fn predecessor(&self) -> Self;
+    fn rotate_nontrivial(self, m: Self, l: Self) -> Self
+    where
+        Self: Mutable,
+    {
+        // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
+        rotate_bidirectional_nontrivial(self, &m, l)
+    }
 }
 
 pub fn sub<I>(mut l: I, mut n: I::DistanceType) -> I
@@ -4600,7 +4615,16 @@ where
 // Exercise 10.4: arbitrary rearrangement using array of n boolean values
 // Exercise 10.5: arbitrary rearrangement using total ordering on iterators
 
-pub trait IndexedIterator: ForwardIterator {}
+pub trait IndexedIterator: ForwardIterator {
+    fn rotate_nontrivial(self, m: Self, l: Self) -> Self
+    where
+        Self: Mutable,
+        Self::DistanceType: EuclideanSemiring,
+    {
+        // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
+        rotate_indexed_nontrivial(self, &m, l)
+    }
+}
 
 pub fn reverse_n_indexed<I>(f: &I, n: I::DistanceType)
 where
@@ -4690,7 +4714,16 @@ where
     l_i
 }
 
-pub trait RandomAccessIterator: IndexedIterator + BidirectionalIterator + TotallyOrdered {}
+pub trait RandomAccessIterator: IndexedIterator + BidirectionalIterator + TotallyOrdered {
+    fn rotate_nontrivial(self, m: Self, l: Self) -> Self
+    where
+        Self: Mutable,
+        Self::DistanceType: EuclideanSemiring,
+    {
+        // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
+        rotate_random_access_nontrivial(self.clone(), &m, l)
+    }
+}
 
 pub struct KRotateFromPermutationRandomAccess<I>
 where
@@ -5040,8 +5073,8 @@ void destroy_all(I /*f*/, I /*l*/, false_type)
 // NeedsConstruction and NeedsDestruction should be overloaded for every POD type
 
 struct Unique<T> {
-    ptr: *const T,
-    _marker: PhantomData<T>,
+    ptr: *const T,           // *const for variance
+    _marker: PhantomData<T>, // For the drop checker
 }
 
 pub struct TemporaryBuffer<T>
@@ -5052,65 +5085,8 @@ where
     n: usize,
 }
 
-use std::alloc::{alloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 use std::mem::{align_of, size_of};
-
-/*
-impl<T> Reference for *mut T
-where
-    T: Regular,
-{
-    type ValueType = T;
-}
-
-impl<T> Writable for *mut T
-where
-    T: Regular,
-{
-    fn sink(&mut self) -> &mut Self::ValueType {
-        unsafe { self.as_mut().unwrap() }
-    }
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct Pointer<T> {
-    p: *mut T,
-}
-
-impl<T> Default for Pointer<T> {
-    fn default() -> Self {
-        Self {
-            p: std::ptr::null_mut(),
-        }
-    }
-}
-
-impl<T> Regular for Pointer<T>
-where
-    T: Regular,
-{
-    type UnderlyingType = *mut T;
-}
-
-impl<T> Iterator for Pointer<T>
-where
-    T: Regular,
-{
-    type DistanceType = usize;
-    fn successor(&self) -> Self {
-        Self {
-            p: unsafe { self.p.add(1) },
-        }
-    }
-}
-
-impl<T> Reference for Pointer<T>
-where
-    T: Regular,
-{
-    type ValueType = T;
-}
-*/
 
 impl<T> TemporaryBuffer<T>
 where
@@ -5120,9 +5096,8 @@ where
     pub fn new(mut n: usize) -> Self {
         let (elem_size, align) = (size_of::<T>(), align_of::<T>());
         loop {
-            let layout = Layout::from_size_align(elem_size * n, align).unwrap();
             unsafe {
-                let p = alloc(layout) as *mut T;
+                let p = alloc(Layout::from_size_align(elem_size * n, align).unwrap()) as *mut T;
                 if !p.is_null() {
                     for i in 0..n {
                         std::ptr::write(p.add(i), T::default());
@@ -5139,14 +5114,34 @@ where
             n = half_nonnegative(n);
         }
     }
+    #[must_use]
+    pub fn size(&self) -> usize {
+        self.n
+    }
+    #[must_use]
+    pub fn begin(&self) -> *mut T {
+        self.p.ptr as *mut T
+    }
+}
+
+impl<T> Drop for TemporaryBuffer<T>
+where
+    T: Regular,
+{
+    fn drop(&mut self) {
+        unsafe {
+            for i in 0..self.n {
+                std::ptr::read(self.p.ptr.add(i));
+            }
+            dealloc(
+                self.p.ptr as *mut u8,
+                Layout::from_size_align(size_of::<T>() * self.n, align_of::<T>()).unwrap(),
+            );
+        }
+    }
 }
 
 /*
-    ~temporary_buffer()
-    {
-        destroy_all(p, p + n);
-        free(p);
-    }
 private:
     // We use private only to signal lack of regularity of a type
     temporary_buffer(const temporary_buffer&) { }
@@ -5166,59 +5161,109 @@ pointer(T) begin(temporary_buffer<T>& b)
 {
     return b.p;
 }
+*/
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-void reverse_n_with_temporary_buffer(I f, DistanceType(I) n)
+#[derive(Clone, Eq, PartialEq)]
+pub struct Pointer<T>(*mut T);
+
+impl<T> Pointer<T> {
+    fn new(x: *mut T) -> Self {
+        Self(x)
+    }
+}
+
+impl<T> Default for Pointer<T> {
+    #[must_use]
+    fn default() -> Self {
+        Self(std::ptr::null_mut())
+    }
+}
+
+impl<T> Regular for Pointer<T>
+where
+    T: Regular,
+{
+    type UnderlyingType = ();
+}
+
+impl<T> Reference for Pointer<T>
+where
+    T: Regular,
+{
+    type ValueType = T;
+}
+
+impl<T> Readable for Pointer<T>
+where
+    T: Regular,
+{
+    #[must_use]
+    fn source(&self) -> &Self::ValueType {
+        unsafe { self.0.as_ref().unwrap() }
+    }
+}
+
+impl<T> Writable for Pointer<T>
+where
+    T: Regular,
+{
+    fn sink(&mut self) -> &mut Self::ValueType {
+        unsafe { self.0.as_mut().unwrap() }
+    }
+}
+
+impl<T> Mutable for Pointer<T> where T: Regular {}
+
+impl<T> Iterator for Pointer<T>
+where
+    T: Regular,
+{
+    type DistanceType = isize;
+    #[must_use]
+    fn successor(&self) -> Self {
+        unsafe { Pointer::new(self.0.offset(1)) }
+    }
+}
+
+impl<T> BidirectionalIterator for Pointer<T>
+where
+    T: Regular,
+{
+    #[must_use]
+    fn predecessor(&self) -> Self {
+        unsafe { Pointer::new(self.0.offset(-1)) }
+    }
+}
+
+pub fn reverse_n_with_temporary_buffer<I>(f: I, n: I::DistanceType)
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n)$
-    temporary_buffer<ValueType(I)> b(n);
-    reverse_n_adaptive(f, n, begin(b), size(b));
+    let b = TemporaryBuffer::new(NumCast::from(n.clone()).unwrap());
+    reverse_n_adaptive(
+        f,
+        n,
+        Pointer::new(b.begin()),
+        NumCast::from(b.size()).unwrap(),
+    );
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-I rotate(I f, I m, I l)
+pub fn rotate<I>(f: I, m: I, l: I) -> I
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge m \in [f, l]$
-    if (m == f) return l;
-    if (m == l) return f;
-    return rotate_nontrivial(f, m, l, IteratorConcept(I)());
+    if m == f {
+        return l;
+    }
+    if m == l {
+        return f;
+    }
+    f.rotate_nontrivial(m, l)
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-I rotate_nontrivial(I f, I m, I l, forward_iterator_tag)
-{
-    // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    return rotate_forward_nontrivial(f, m, l);
-}
-
-template<typename I>
-    requires(Mutable(I) && BidirectionalIterator(I))
-I rotate_nontrivial(I f, I m, I l, bidirectional_iterator_tag)
-{
-    // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    return rotate_bidirectional_nontrivial(f, m, l);
-}
-
-template<typename I>
-    requires(Mutable(I) && IndexedIterator(I))
-I rotate_nontrivial(I f, I m, I l, indexed_iterator_tag)
-{
-    // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    return rotate_indexed_nontrivial(f, m, l);
-}
-
-template<typename I>
-    requires(Mutable(I) && RandomAccessIterator(I))
-I rotate_nontrivial(I f, I m, I l, random_access_iterator_tag)
-{
-    // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-    return rotate_random_access_nontrivial(f, m, l);
-}
-
-
+/*
 //
 //  Chapter 11. Partition and merging
 //
