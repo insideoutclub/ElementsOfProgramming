@@ -5218,7 +5218,7 @@ impl<T> Iterator for Pointer<T>
 where
     T: Regular,
 {
-    type DistanceType = isize;
+    type DistanceType = usize;
     #[must_use]
     fn successor(&self) -> Self {
         unsafe { Pointer::new(self.0.offset(1)) }
@@ -5493,126 +5493,236 @@ where
     x.m0
 }
 
-/*
-template<typename I, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair<I, I> partition_stable_singleton(I f, P p)
+pub fn partition_stable_singleton<I, P>(mut f: I, p: &P) -> Pair<I, I>
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, \func{successor}(f))$
-    I l = successor(f);
-    if (!p(source(f))) f = l;
-    return pair<I, I>(f, l);
+    let l = f.successor();
+    if !p.call(f.source()) {
+        f = l.clone();
+    }
+    Pair::new(f, l)
 }
 
-template<typename I>
-    requires(Mutable(I) && ForwardIterator(I))
-pair<I, I> combine_ranges(const pair<I, I>& x,
-                          const pair<I, I>& y)
+pub fn combine_ranges<I>(x: Pair<I, I>, y: Pair<I, I>) -> Pair<I, I>
+where
+    I: Mutable + ForwardIterator,
 {
     // Precondition: $\property{mutable\_bounded\_range}(x.m0, y.m0)$
     // Precondition: $x.m1 \in [x.m0, y.m0]$
-    return pair<I, I>(rotate(x.m0, x.m1, y.m0), y.m1);
+    Pair::new(rotate(x.m0, x.m1, y.m0), y.m1)
 }
 
-template<typename I, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair<I, I> partition_stable_n_nonempty(I f, DistanceType(I) n,
-                                       P p)
+pub fn partition_stable_n_nonempty<I, P>(f: I, n: I::DistanceType, p: &P) -> Pair<I, I>
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n) \wedge n > 0$
-    if (one(n)) return partition_stable_singleton(f, p);
-    DistanceType(I) h = half_nonnegative(n);
-    pair<I, I> x = partition_stable_n_nonempty(f, h, p);
-    pair<I, I> y = partition_stable_n_nonempty(x.m1, n - h, p);
-    return combine_ranges(x, y);
+    if one(&n) {
+        return partition_stable_singleton(f, p);
+    }
+    let h = half_nonnegative(n.clone());
+    let x = partition_stable_n_nonempty(f, h.clone(), p);
+    let y = partition_stable_n_nonempty(x.m1.clone(), n - h, p);
+    combine_ranges(x, y)
 }
 
-template<typename I, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-pair<I, I> partition_stable_n(I f, DistanceType(I) n, P p)
+pub fn partition_stable_n<I, P>(f: I, n: I::DistanceType, p: &P) -> Pair<I, I>
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n)$
-    if (zero(n)) return pair<I, I>(f, f);
-    return partition_stable_n_nonempty(f, n, p);
+    if zero(&n) {
+        return Pair::new(f.clone(), f);
+    }
+    partition_stable_n_nonempty(f, n, p)
 }
-
 
 // Exercise 11.10: partition_stable_n_adaptive
 
-
-template<typename I, typename P>
-   requires(Mutable(I) && ForwardIterator(I) &&
-       UnaryPredicate(P) && Domain(P) == ValueType(I)\)
-I partition_stable(I f, I l, P p)
+pub fn partition_stable<I, P>(f: I, l: I, p: &P) -> I
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    return partition_stable_n(f, l - f, p).m0;
+    let n = l.sub(&f);
+    partition_stable_n(f, n, p).m0
 }
 
-template<typename I, typename P>
-    requires(ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-struct partition_trivial
-{
-    P p;
-    partition_trivial(const P & p) : p(p) {}
-    pair<I, I> operator()(I i)
-    {
-        return partition_stable_singleton<I, P>(i, p);
-    }
-};
+pub struct PartitionTrivial<I, P> {
+    p: P,
+    _marker: PhantomData<I>,
+}
 
+impl<I, P> PartitionTrivial<I, P> {
+    pub fn new(p: P) -> Self {
+        Self {
+            p,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<I, P> PartitionTrivial<I, P>
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
+{
+    pub fn call(&self, i: I) -> Pair<I, I> {
+        partition_stable_singleton(i, &self.p)
+    }
+}
+
+/*
 template<typename I, typename P>
     requires(ForwardIterator(I) && UnaryPredicate(P) && ValueType(I) == Domain(P))
 struct codomain_type< partition_trivial<I, P> >
 {
     typedef pair<I, I> type;
 };
+*/
 
-template<typename I, typename Op>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        BinaryOperation(Op) && ValueType(I) == Domain(Op))
-Domain(Op) add_to_counter(I f, I l, Op op, Domain(Op) x,
-                          const Domain(Op)& z)
+pub fn add_to_counter<I, Op>(
+    mut f: I,
+    l: &I,
+    op: &Op,
+    mut x: Op::Domain,
+    z: Op::Domain,
+) -> Op::Domain
+where
+    I: Mutable + ForwardIterator,
+    Op: BinaryOperation<Domain = I::ValueType>,
 {
-    if (x == z) return z;
-    while (f != l) {
-        if (source(f) == z) {
-            sink(f) = x;
+    if x == z {
+        return z;
+    }
+    while f != *l {
+        if *f.source() == z {
+            *f.sink() = x;
             return z;
         }
-        x = op(source(f), x);
-        sink(f) = z;
-        f = successor(f);
+        x = op.call(f.source(), &x);
+        *f.sink() = z.clone();
+        f = f.successor();
     }
-    return x;
+    x
 }
 
-template<typename Op>
-    requires(BinaryOperation(Op))
-struct counter_machine
+pub struct CounterMachine<Op>
+where
+    Op: BinaryOperation,
 {
-    typedef Domain(Op) T;
-    Op op;
-    T z;
-    T f[64];
-    DistanceType(pointer(T)) n;
-    counter_machine(Op op, const Domain(Op)& z) :
-    op(op), z(z), n(0) { }
-    void operator()(const T& x)
-    {
-        // Precondition: must not be called more than $2^{64}-1$ times
-         T tmp = add_to_counter(f, f + n, op, x, z);
-         if (tmp != z) {
-             sink(f + n) = tmp;
-             n = successor(n);
-         }
-    }
-};
+    op: Op,
+    z: Op::Domain,
+    f: [Op::Domain; 64],
+    n: <Pointer<Op::Domain> as Iterator>::DistanceType,
+}
 
+impl<Op> CounterMachine<Op>
+where
+    Op: BinaryOperation,
+{
+    pub fn new(op: Op, z: Op::Domain) -> Self {
+        Self {
+            op,
+            z,
+            f: [
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+                Op::Domain::default(),
+            ],
+            n: <Pointer<Op::Domain> as Iterator>::DistanceType::zero(),
+        }
+    }
+}
+
+impl<Op> CounterMachine<Op>
+where
+    Op: BinaryOperation,
+{
+    pub fn call(&mut self, x: Op::Domain) {
+        // Precondition: must not be called more than $2^{64}-1$ times
+        let tmp = add_to_counter(
+            Pointer::new(&mut self.f[0]),
+            &Pointer::new(&mut self.f[self.n]),
+            &self.op,
+            x,
+            self.z.clone(),
+        );
+        if tmp != self.z {
+            *(Pointer::new(&mut self.f[self.n])).sink() = tmp;
+            self.n = successor(self.n);
+        }
+    }
+}
+
+/*
 template<typename Op>
     requires(BinaryOperation(Op))
 struct transpose_operation
