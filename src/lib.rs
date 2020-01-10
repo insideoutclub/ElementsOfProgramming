@@ -4721,7 +4721,7 @@ pub trait RandomAccessIterator: IndexedIterator + BidirectionalIterator + Totall
         Self::DistanceType: EuclideanSemiring,
     {
         // Precondition: $\property{mutable\_bounded\_range}(f, l) \wedge f \prec m \prec l$
-        rotate_random_access_nontrivial(self.clone(), &m, l)
+        rotate_random_access_nontrivial(self, &m, l)
     }
 }
 
@@ -5263,73 +5263,76 @@ where
     f.rotate_nontrivial(m, l)
 }
 
-/*
 //
 //  Chapter 11. Partition and merging
 //
 
-
 // Exercise 11.1:
 
-template<typename I,  typename P>
-    requires(Readable(I) && Iterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-bool partitioned_at_point(I f, I m, I l, P p)
+pub fn partitioned_at_point<I, P>(f: I, m: I, l: &I, p: &P) -> bool
+where
+    I: Readable + Iterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l) \wedge m \in [f, l]$
-    return none(f, m, p) && all(m, l, p);
+    none(f, &m, p) && all(m, l, p)
 }
-
 
 // Exercise 11.2:
 
-template<typename I, typename P>
-    requires(Readable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I potential_partition_point(I f, I l, P p)
+pub fn potential_partition_point<I, P>(f: I, l: &I, p: &P) -> I
+where
+    I: Readable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
-    return count_if_not(f, l, p, f);
+    count_if_not(f.clone(), l, p, f)
 }
 
-template<typename I, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_semistable(I f, I l, P p)
+pub fn partition_semistable<I, P>(f: I, l: &I, p: &P) -> I
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    I i = find_if(f, l, p);
-    if (i == l) return i;
-    I j = successor(i);
-    while (true) {
+    let mut i = find_if(f, l, p);
+    if i == *l {
+        return i;
+    }
+    let mut j = i.successor();
+    loop {
         j = find_if_not(j, l, p);
-        if (j == l) return i;
-        swap_step(i, j);
+        if j == *l {
+            return i;
+        }
+        swap_step(&mut i, &mut j);
     }
 }
 
 // Exercise 11.3: rewrite partition_semistable, expanding find_if_not inline and
 // eliminating extra test against l
 
-
 // Exercise 11.4: substitute copy_step(j, i) for swap_step(i, j) in partition_semistable
 
-template<typename I, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I remove_if(I f, I l, P p)
+pub fn remove_if<I, P>(f: I, l: &I, p: &P) -> I
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    I i = find_if(f, l, p);
-    if (i == l) return i;
-    I j = successor(i);
-    while (true) {
+    let mut i = find_if(f, l, p);
+    if i == *l {
+        return i;
+    }
+    let mut j = i.successor();
+    loop {
         j = find_if_not(j, l, p);
-        if (j == l) return i;
-        copy_step(j, i);
+        if j == *l {
+            return i;
+        }
+        copy_step(&mut j, &mut i);
     }
 }
-
 
 // Exercise 11.5:
 
@@ -5342,141 +5345,155 @@ I remove_if(I f, I l, P p)
 //    ...
 //}
 
-template<typename I, typename P>
-    requires(Mutable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_bidirectional(I f, I l, P p)
+pub fn partition_bidirectional<I, P>(mut f: I, mut l: I, p: &P) -> I
+where
+    I: Mutable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    while (true) {
-        f = find_if(f, l, p);
-        l = find_backward_if_not(f, l, p);
-        if (f == l) return f;
-        reverse_swap_step(l, f);
+    loop {
+        f = find_if(f, &l, p);
+        l = find_backward_if_not(&f, l, p);
+        if f == l {
+            return f;
+        }
+        reverse_swap_step(&mut l, &mut f);
     }
 }
 
 // Exercise 11.6:
 
-template<typename I,  typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_forward(I f, I l, P p)
+pub fn partition_forward<I, P>(mut f: I, l: &I, p: &P) -> I
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    I i = count_if_not(f, l, p, f);
-    I j = i;
-    while (true) {
+    let i = count_if_not(f.clone(), l, p, f.clone());
+    let mut j = i.clone();
+    loop {
         j = find_if_not(j, l, p);
-        if (j == l) return i;
+        if j == *l {
+            return i;
+        }
         f = find_if_unguarded(f, p);
-        swap_step(f, j);
+        swap_step(&mut f, &mut j);
     }
 }
 
 // Exercise 11.7: partition_single_cycle
 
-template<typename I, typename P>
-    requires(Mutable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_single_cycle(I f, I l, P p)
+pub fn partition_single_cycle<I, P>(mut f: I, mut l: I, p: &P) -> I
+where
+    I: Mutable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    f = find_if(f, l, p);
-    l = find_backward_if_not(f, l, p);
-    if (f == l) return f;
-    l = predecessor(l);
-    ValueType(I) tmp = source(f);
-    while (true) {
-        sink(f) = source(l);
-        f = find_if(successor(f), l, p);
-        if (f == l) {
-            sink(l) = tmp;
+    f = find_if(f, &l, p);
+    l = find_backward_if_not(&f, l, p);
+    if f == l {
+        return f;
+    }
+    l = l.predecessor();
+    let tmp = f.source().clone();
+    loop {
+        *f.sink() = l.source().clone();
+        f = find_if(f.successor(), &l, p);
+        if f == l {
+            *l.sink() = tmp;
             return f;
         }
-        sink(l) = source(f);
+        *l.sink() = f.source().clone();
         l = find_backward_if_not_unguarded(l, p);
     }
 }
 
-
 // Exercise 11.8: partition_sentinel
 
-template<typename I, typename P>
-    requires(Mutable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_bidirectional_unguarded(I f, I l, P p)
+pub fn partition_bidirectional_unguarded<I, P>(mut f: I, mut l: I, p: &P) -> I
+where
+    I: Mutable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition:
     // $(\neg \func{all}(f, l, p) \wedge \func{some}(f, l, p)) \vee
     // (\neg p(\func{source}(f-1)) \wedge p(\func{source}(l)))$
-    while (true) {
+    loop {
         f = find_if_unguarded(f, p);
         l = find_backward_if_not_unguarded(l, p);
-        if (successor(l) == f) return f;
-        exchange_values(f, l);
-        f = successor(f); // $\neg p(\func{source}(f-1)) \wedge p(\func{source}(l))$
+        if l.successor() == f {
+            return f;
+        }
+        exchange_values(&mut f, &mut l);
+        f = f.successor(); // $\neg p(\func{source}(f-1)) \wedge p(\func{source}(l))$
     }
 }
 
-template<typename I, typename P>
-    requires(Mutable(I) && BidirectionalIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_sentinel(I f, I l, P p)
+pub fn partition_sentinel<I, P>(mut f: I, mut l: I, p: &P) -> I
+where
+    I: Mutable + BidirectionalIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    f = find_if(f, l, p);
-    l = find_backward_if_not(f, l, p);
-    if (f == l) return f;
-    l = predecessor(l);
-    exchange_values(f, l);
-    f = successor(f);
-    return partition_bidirectional_unguarded(f, l, p);
+    f = find_if(f, &l, p);
+    l = find_backward_if_not(&f, l, p);
+    if f == l {
+        return f;
+    }
+    l = l.predecessor();
+    exchange_values(&mut f, &mut l);
+    f = f.successor();
+    partition_bidirectional_unguarded(f, l, p)
 }
-
 
 // Exercise 11.9: partition_single_cycle_sentinel
 
-
-template<typename I, typename P>
-    requires(Mutable(I) && IndexedIterator(I) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_indexed(I f, I l, P p)
+pub fn partition_indexed<I, P>(f: I, l: I, p: &P) -> I
+where
+    I: Mutable + IndexedIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
-    typedef DistanceType(I) N;
-    N i(0);
-    N j = l - f;
-    while (true) {
-        while (true) {
-            if (i == j) return f + i;
-            if (p(source(f + i))) break;
+    let mut i = I::DistanceType::zero();
+    let mut j = l.sub(&f);
+    loop {
+        loop {
+            if i == j {
+                return f.add(i);
+            }
+            if p.call(f.clone().add(i.clone()).source()) {
+                break;
+            }
             i = successor(i);
         }
-        while (true) {
+        loop {
             j = predecessor(j);
-            if (i == j) return f + j + 1;
-            if (!p(source(f + j))) break;
+            if i == j {
+                return f.add(j).add(I::DistanceType::one());
+            }
+            if !p.call(f.clone().add(j.clone()).source()) {
+                break;
+            }
         }
-        exchange_values(f + i, f + j);
+        exchange_values(&mut f.clone().add(i.clone()), &mut f.clone().add(j.clone()));
         i = successor(i);
     }
 }
 
-template<typename I, typename B, typename P>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B) &&
-        ValueType(I) == ValueType(B) &&
-        UnaryPredicate(P) && ValueType(I) == Domain(P))
-I partition_stable_with_buffer(I f, I l, B f_b, P p)
+pub fn partition_stable_with_buffer<I, B, P>(f: I, l: &I, f_b: B, p: P) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{mutable\_bounded\_range}(f, l)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, l-f)$
-    pair<I, B> x = partition_copy(f, l, f, f_b, p);
-    copy(f_b, x.m1, x.m0);
-    return x.m0;
+    let x = partition_copy(f.clone(), l, f, f_b.clone(), p);
+    copy(f_b, &x.m1, x.m0.clone());
+    x.m0
 }
 
+/*
 template<typename I, typename P>
     requires(Mutable(I) && ForwardIterator(I) &&
         UnaryPredicate(P) && ValueType(I) == Domain(P))
