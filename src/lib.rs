@@ -4978,7 +4978,7 @@ where
     T: Regular,
 {
     p: Unique<T>,
-    n: usize,
+    n: <Pointer<T> as Iterator>::DistanceType,
 }
 
 use std::alloc::{alloc, dealloc, Layout};
@@ -4989,7 +4989,7 @@ where
     T: Regular,
 {
     #[must_use]
-    pub fn new(mut n: usize) -> Self {
+    pub fn new(mut n: <Pointer<T> as Iterator>::DistanceType) -> Self {
         let (elem_size, align) = (size_of::<T>(), align_of::<T>());
         loop {
             unsafe {
@@ -5011,12 +5011,12 @@ where
         }
     }
     #[must_use]
-    pub fn size(&self) -> usize {
+    pub fn size(&self) -> <Pointer<T> as Iterator>::DistanceType {
         self.n
     }
     #[must_use]
-    pub fn begin(&self) -> *mut T {
-        self.p.ptr as *mut T
+    pub fn begin(&self) -> Pointer<T> {
+        Pointer::new(self.p.ptr as *mut T)
     }
 }
 
@@ -5130,12 +5130,7 @@ where
 {
     // Precondition: $\property{mutable\_counted\_range}(f, n)$
     let b = TemporaryBuffer::new(NumCast::from(n.clone()).unwrap());
-    reverse_n_adaptive(
-        f,
-        n,
-        Pointer::new(b.begin()),
-        NumCast::from(b.size()).unwrap(),
-    );
+    reverse_n_adaptive(f, n, b.begin(), NumCast::from(b.size()).unwrap());
 }
 
 pub fn rotate<I>(f: I, m: I, l: I) -> I
@@ -5483,15 +5478,6 @@ where
         partition_stable_singleton(i.clone(), &self.p)
     }
 }
-
-/*
-template<typename I, typename P>
-    requires(ForwardIterator(I) && UnaryPredicate(P) && ValueType(I) == Domain(P))
-struct codomain_type< partition_trivial<I, P> >
-{
-    typedef pair<I, I> type;
-};
-*/
 
 pub fn add_to_counter<I, Op>(
     mut f: I,
@@ -5892,7 +5878,7 @@ where
     // Precondition:
     // $\property{mutable\_counted\_range}(f, n) \wedge \property{weak\_ordering}(r)$
     let b = TemporaryBuffer::new(NumCast::from(half_nonnegative(n.clone())).unwrap());
-    sort_n_adaptive(f, n.clone(), Pointer::new(b.begin()), b.size(), r)
+    sort_n_adaptive(f, n.clone(), b.begin(), b.size(), r)
 }
 
 /*
