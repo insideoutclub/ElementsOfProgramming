@@ -19,21 +19,9 @@
 use num::{NumCast, One, Zero};
 use std::ops::{BitAnd, Div, Rem, Shl, Shr, Sub};
 
-pub trait Regular: Clone + Default + Eq {
-    type UnderlyingType;
-}
+pub trait Regular: Clone + Default + Eq {}
 
-impl Regular for i32 {
-    type UnderlyingType = i32;
-}
-
-impl Regular for usize {
-    type UnderlyingType = usize;
-}
-
-impl Regular for isize {
-    type UnderlyingType = isize;
-}
+impl<T> Regular for T where T: Clone + Default + Eq {}
 
 pub trait Integer:
     BitAnd<Self, Output = Self>

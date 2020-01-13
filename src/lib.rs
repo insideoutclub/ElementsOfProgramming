@@ -65,26 +65,31 @@ pub fn square(n: i32) -> i32 {
     n * n
 }
 
-pub trait BinaryOperation {
+pub trait BinaryOperation: Regular {
     type Domain: Regular;
     fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
 }
 
-pub struct BinaryOperationWrapper<Domain, Op>
-where
-    Op: Fn(&Domain, &Domain) -> Domain,
-{
-    op: Op,
+#[derive(Clone, Eq, PartialEq)]
+pub struct BinaryOperationWrapper<Domain, Op> {
+    op: Option<Op>,
     marker: PhantomData<Domain>,
 }
 
-impl<Domain, Op> BinaryOperationWrapper<Domain, Op>
-where
-    Op: Fn(&Domain, &Domain) -> Domain,
-{
+impl<Domain, Op> Default for BinaryOperationWrapper<Domain, Op> {
+    #[must_use]
+    fn default() -> Self {
+        Self {
+            op: None,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<Domain, Op> BinaryOperationWrapper<Domain, Op> {
     pub fn new(op: Op) -> Self {
         Self {
-            op,
+            op: Some(op),
             marker: PhantomData,
         }
     }
@@ -93,11 +98,11 @@ where
 impl<Domain, Op> BinaryOperation for BinaryOperationWrapper<Domain, Op>
 where
     Domain: Regular,
-    Op: Fn(&Domain, &Domain) -> Domain,
+    Op: Fn(Domain, Domain) -> Domain + Clone + Eq,
 {
     type Domain = Domain;
     fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain {
-        (self.op)(x, y)
+        (self.op.as_ref().unwrap())(x.clone(), y.clone())
     }
 }
 
@@ -115,13 +120,6 @@ pub struct Equal<T>(PhantomData<T>);
 
 pub trait Procedure {
     type InputType;
-}
-
-impl<T> Regular for Equal<T>
-where
-    T: Clone + Default + Eq,
-{
-    type UnderlyingType = PhantomData<T>;
 }
 
 impl<T> Relation for Equal<T>
@@ -163,16 +161,6 @@ where
     }
 }
 
-impl<T0, T1> Regular for Pair<T0, T1>
-where
-    T0: Regular,
-    T1: Regular,
-    T0::UnderlyingType: Regular,
-    T1::UnderlyingType: Regular,
-{
-    type UnderlyingType = Pair<T0::UnderlyingType, T1::UnderlyingType>;
-}
-
 // type triple (see Exercise 12.2 of Elements of Programming)
 
 #[derive(Clone, Default, Eq, Ord, PartialEq, PartialOrd)]
@@ -196,18 +184,6 @@ where
     fn new(m0: T0, m1: T1, m2: T2) -> Self {
         Self { m0, m1, m2 }
     }
-}
-
-impl<T0, T1, T2> Regular for Triple<T0, T1, T2>
-where
-    T0: Regular,
-    T1: Regular,
-    T2: Regular,
-    T0::UnderlyingType: Regular,
-    T1::UnderlyingType: Regular,
-    T2::UnderlyingType: Regular,
-{
-    type UnderlyingType = Triple<T0::UnderlyingType, T1::UnderlyingType, T2::UnderlyingType>;
 }
 
 //
@@ -714,20 +690,19 @@ where
     power(a, n, op)
 }
 
-pub fn fibonacci_matrix_multiply<I>(x: &Pair<I, I>, y: &Pair<I, I>) -> Pair<I, I>
+pub fn fibonacci_matrix_multiply<I>(x: Pair<I, I>, y: Pair<I, I>) -> Pair<I, I>
 where
     I: Integer,
 {
     Pair::new(
         x.m0.clone() * (y.m1.clone() + y.m0.clone()) + x.m1.clone() * y.m0.clone(),
-        x.m0.clone() * y.m0.clone() + x.m1.clone() * y.m1.clone(),
+        x.m0.clone() * y.m0.clone() + x.m1 * y.m1,
     )
 }
 
 pub fn fibonacci<I>(n: I) -> I
 where
     I: Integer,
-    I::UnderlyingType: Regular,
 {
     // Precondition: $n \geq 0$
     if n == I::zero() {
@@ -736,7 +711,9 @@ where
     power(
         Pair::new(I::one(), I::zero()),
         n,
-        &BinaryOperationWrapper::new(fibonacci_matrix_multiply),
+        &BinaryOperationWrapper::new(
+            fibonacci_matrix_multiply as fn(Pair<I, I>, Pair<I, I>) -> Pair<I, I>,
+        ),
     )
     .m0
 }
@@ -771,13 +748,6 @@ where
     }
 }
 
-impl<R> Regular for Complement<R>
-where
-    R: Relation,
-{
-    type UnderlyingType = ();
-}
-
 impl<R> Relation for Complement<R>
 where
     R: Relation,
@@ -804,13 +774,6 @@ impl<R> Converse<R> {
     fn _new(r: R) -> Self {
         Self { r }
     }
-}
-
-impl<R> Regular for Converse<R>
-where
-    R: Relation,
-{
-    type UnderlyingType = ();
 }
 
 impl<R> Relation for Converse<R>
@@ -841,13 +804,6 @@ impl<R> ComplementOfConverse<R> {
     }
 }
 
-impl<R> Regular for ComplementOfConverse<R>
-where
-    R: Relation,
-{
-    type UnderlyingType = ();
-}
-
 impl<R> Relation for ComplementOfConverse<R>
 where
     R: Relation,
@@ -874,13 +830,6 @@ impl<R> SymmetricComplement<R> {
     fn _new(r: R) -> Self {
         SymmetricComplement { r }
     }
-}
-
-impl<R> Regular for SymmetricComplement<R>
-where
-    R: Relation,
-{
-    type UnderlyingType = ();
 }
 
 impl<R> Relation for SymmetricComplement<R>
@@ -1297,13 +1246,6 @@ where
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct Less<T>(PhantomData<T>);
 
-impl<T> Regular for Less<T>
-where
-    T: Regular,
-{
-    type UnderlyingType = ();
-}
-
 impl<T> Relation for Less<T>
 where
     T: Regular + TotallyOrdered,
@@ -1378,7 +1320,7 @@ pub trait AdditiveSemigroup: Regular {
     fn add(&self, x: &Self) -> Self;
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Plus<T>(PhantomData<T>);
 
 impl<T> BinaryOperation for Plus<T>
@@ -1402,7 +1344,7 @@ pub trait MultiplicativeSemigroup: Regular {
     fn mul(&self, y: &Self) -> Self;
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, Eq, PartialEq)]
 pub struct Multiplies<T>(PhantomData<T>);
 
 impl<T> BinaryOperation for Multiplies<T>
@@ -3288,13 +3230,6 @@ where
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct AlwaysFalse<T>(PhantomData<T>);
 
-impl<T> Regular for AlwaysFalse<T>
-where
-    T: Regular,
-{
-    type UnderlyingType = ();
-}
-
 impl<T> Relation for AlwaysFalse<T>
 where
     T: Regular,
@@ -3446,7 +3381,6 @@ pub fn split_linked<I, S, Pred>(
 where
     S: ForwardLinker<IteratorType = I>,
     I: Iterator,
-    I::UnderlyingType: Regular,
     Pred: UnaryPseudoPredicate<Domain = I>,
 {
     // Precondition: $\property{bounded\_range}(f, l)$
@@ -3679,7 +3613,6 @@ where
 pub fn partition_linked<I, S, P>(f: I, l: &I, p: P, set_link: S) -> Pair<Pair<I, I>, Pair<I, I>>
 where
     I: Readable + ForwardIterator,
-    I::UnderlyingType: Regular,
     S: ForwardLinker<IteratorType = I>,
     P: UnaryPseudoPredicate<Domain = I::ValueType>,
 {
@@ -3711,15 +3644,6 @@ where
             marker: PhantomData,
         }
     }
-}
-
-impl<I0, I1, R> Regular for RelationSource<I0, I1, R>
-where
-    I0: Readable,
-    I1: Readable<ValueType = I0::ValueType>,
-    R: Relation<Domain = I0::ValueType>,
-{
-    type UnderlyingType = ();
 }
 
 impl<I0, I1, R> PseudoRelation for RelationSource<I0, I1, R>
@@ -5179,13 +5103,6 @@ impl<T> Default for Pointer<T> {
     }
 }
 
-impl<T> Regular for Pointer<T>
-where
-    T: Regular,
-{
-    type UnderlyingType = ();
-}
-
 impl<T> Reference for Pointer<T>
 where
     T: Regular,
@@ -5722,63 +5639,73 @@ where
     }
 }
 
-/*
-template<typename Op>
-    requires(BinaryOperation(Op))
-struct transpose_operation
-{
-    Op op;
-    transpose_operation(Op op) : op(op) { }
-    typedef Domain(Op) T;
-    T operator()(const T& x, const T& y)
-    {
-        return op(y, x);
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct TransposeOperation<Op> {
+    op: Op,
+}
+
+impl<Op> TransposeOperation<Op> {
+    pub fn new(op: Op) -> Self {
+        Self { op }
     }
-};
+}
 
-template<typename Op>
-    requires(BinaryOperation(Op))
-struct input_type< transpose_operation<Op>, 0 >
+impl<Op> BinaryOperation for TransposeOperation<Op>
+where
+    Op: BinaryOperation,
 {
-    typedef Domain(Op) type;
-};
+    type Domain = Op::Domain;
+    fn call(&self, x: &Op::Domain, y: &Op::Domain) -> Op::Domain {
+        self.op.call(y, x)
+    }
+}
 
-template<typename I, typename Op, typename F>
-    requires(Iterator(I) && BinaryOperation(Op) &&
-        UnaryFunction(F) && I == Domain(F) &&
-        Codomain(F) == Domain(Op))
-Domain(Op) reduce_balanced(I f, I l, Op op, F fun,
-                           const Domain(Op)& z)
+pub trait FunctionalProcedure {
+    type Codomain;
+}
+
+pub trait UnaryFunction: FunctionalProcedure {
+    type Domain;
+    fn call(&self, x: &Self::Domain) -> Self::Codomain;
+}
+
+pub fn reduce_balanced<I, Op, F>(mut f: I, l: &I, op: Op, fun: &F, z: &Op::Domain) -> Op::Domain
+where
+    I: Iterator,
+    Op: BinaryOperation,
+    F: UnaryFunction<Domain = I, Codomain = Op::Domain>,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge l - f < 2^{64}$
     // Precondition: $\property{partially\_associative}(op)$
     // Precondition: $(\forall x \in [f, l))\,fun(x)$ is defined
-    counter_machine<Op> c(op, z);
-    while (f != l) {
-        c(fun(f));
-        f = successor(f);
+    let mut c = CounterMachine::new(op.clone(), z.clone());
+    while f != *l {
+        c.call(fun.call(&f));
+        f = f.successor();
     }
-    transpose_operation<Op> t_op(op);
-    return reduce_nonzeroes(c.f, c.f + c.n, t_op, z);
+    let t_op = TransposeOperation::new(op);
+    let f = Pointer::new(c.f.as_mut_ptr());
+    reduce_nonzeroes_1(f.clone(), &f.add(c.n), &t_op, &z)
 }
 
-template<typename I, typename Op>
-    requires(ReadableIterator(I) && BinaryOperation(Op) &&
-        ValueType(I) == Domain(Op))
-Domain(Op) reduce_balanced(I f, I l, Op op, const Domain(Op)& z)
+pub fn reduce_balanced_1<I, Op>(mut f: I, l: &I, op: Op, z: &Op::Domain) -> Op::Domain
+where
+    I: Readable + Iterator,
+    Op: BinaryOperation<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l) \wedge l-f < 2^{33}$
     // Precondition: $\property{partially\_associative}(op)$
-    counter_machine<Op> c(op, z);
-    while (f != l) {
-        c(source(f));
-        f = successor(f);
+    let mut c = CounterMachine::new(op.clone(), z.clone());
+    while f != *l {
+        c.call(f.source().clone());
+        f = f.successor();
     }
-    transpose_operation<Op> t_op(op);
-    return reduce_nonzeroes(c.f, c.f + c.n, t_op, z);
+    let t_op = TransposeOperation::new(op);
+    let f = Pointer::new(c.f.as_mut_ptr());
+    reduce_nonzeroes_1(f.clone(), &f.add(c.n), &t_op, z)
 }
 
-
+/*
 template<typename I, typename P>
     requires(ForwardIterator(I) && UnaryPredicate(P) &&
         ValueType(I) == Domain(P))
