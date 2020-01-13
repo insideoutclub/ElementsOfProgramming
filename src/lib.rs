@@ -25,6 +25,7 @@
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
     clippy::many_single_char_names,
+    clippy::too_many_arguments,
     clippy::type_repetition_in_bounds,
     clippy::use_self
 )]
@@ -68,42 +69,6 @@ pub fn square(n: i32) -> i32 {
 pub trait BinaryOperation: Regular {
     type Domain: Regular;
     fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain;
-}
-
-#[derive(Clone, Eq, PartialEq)]
-pub struct BinaryOperationWrapper<Domain, Op> {
-    op: Option<Op>,
-    marker: PhantomData<Domain>,
-}
-
-impl<Domain, Op> Default for BinaryOperationWrapper<Domain, Op> {
-    #[must_use]
-    fn default() -> Self {
-        Self {
-            op: None,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<Domain, Op> BinaryOperationWrapper<Domain, Op> {
-    pub fn new(op: Op) -> Self {
-        Self {
-            op: Some(op),
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<Domain, Op> BinaryOperation for BinaryOperationWrapper<Domain, Op>
-where
-    Domain: Regular,
-    Op: Fn(Domain, Domain) -> Domain + Clone + Eq,
-{
-    type Domain = Domain;
-    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain {
-        (self.op.as_ref().unwrap())(x.clone(), y.clone())
-    }
 }
 
 pub fn square_1<Op>(x: &Op::Domain, op: &Op) -> Op::Domain
@@ -690,14 +655,20 @@ where
     power(a, n, op)
 }
 
-pub fn fibonacci_matrix_multiply<I>(x: Pair<I, I>, y: Pair<I, I>) -> Pair<I, I>
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct FibonacciMatrixMultiply<I>(PhantomData<I>);
+
+impl<I> BinaryOperation for FibonacciMatrixMultiply<I>
 where
     I: Integer,
 {
-    Pair::new(
-        x.m0.clone() * (y.m1.clone() + y.m0.clone()) + x.m1.clone() * y.m0.clone(),
-        x.m0.clone() * y.m0.clone() + x.m1 * y.m1,
-    )
+    type Domain = Pair<I, I>;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain {
+        Pair::new(
+            x.m0.clone() * (y.m1.clone() + y.m0.clone()) + x.m1.clone() * y.m0.clone(),
+            x.m0.clone() * y.m0.clone() + x.m1.clone() * y.m1.clone(),
+        )
+    }
 }
 
 pub fn fibonacci<I>(n: I) -> I
@@ -711,9 +682,7 @@ where
     power(
         Pair::new(I::one(), I::zero()),
         n,
-        &BinaryOperationWrapper::new(
-            fibonacci_matrix_multiply as fn(Pair<I, I>, Pair<I, I>) -> Pair<I, I>,
-        ),
+        &FibonacciMatrixMultiply::default(),
     )
     .m0
 }
@@ -2139,10 +2108,13 @@ where
     reduce_nonempty(f, l, op, fun)
 }
 
+pub trait ReadableIterator: Readable + Iterator {}
+impl<T> ReadableIterator for T where T: Readable + Iterator {}
+
 pub fn reduce_1<I, Op>(f: I, l: &I, op: &Op, z: &Op::Domain) -> Op::Domain
 where
-    I: Readable<ValueType = Op::Domain> + Iterator,
-    Op: BinaryOperation,
+    I: ReadableIterator,
+    Op: BinaryOperation<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -2184,8 +2156,8 @@ where
 
 pub fn reduce_nonzeroes_1<I, Op>(mut f: I, l: &I, op: &Op, z: &Op::Domain) -> Op::Domain
 where
-    I: Readable<ValueType = Op::Domain> + Iterator,
-    Op: BinaryOperation,
+    I: ReadableIterator,
+    Op: BinaryOperation<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l)$
     // Precondition: $\property{partially\_associative}(op)$
@@ -5423,13 +5395,22 @@ where
     Pair::new(f, l)
 }
 
-pub fn combine_ranges<I>(x: Pair<I, I>, y: Pair<I, I>) -> Pair<I, I>
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct CombineRanges<I>(PhantomData<I>);
+
+impl<I> BinaryOperation for CombineRanges<I>
 where
     I: Mutable + ForwardIterator,
 {
-    // Precondition: $\property{mutable\_bounded\_range}(x.m0, y.m0)$
-    // Precondition: $x.m1 \in [x.m0, y.m0]$
-    Pair::new(rotate(x.m0, x.m1, y.m0), y.m1)
+    type Domain = Pair<I, I>;
+    fn call(&self, x: &Self::Domain, y: &Self::Domain) -> Self::Domain {
+        // Precondition: $\property{mutable\_bounded\_range}(x.m0, y.m0)$
+        // Precondition: $x.m1 \in [x.m0, y.m0]$
+        Pair::new(
+            rotate(x.m0.clone(), x.m1.clone(), y.m0.clone()),
+            y.m1.clone(),
+        )
+    }
 }
 
 pub fn partition_stable_n_nonempty<I, P>(f: I, n: I::DistanceType, p: &P) -> Pair<I, I>
@@ -5444,7 +5425,7 @@ where
     let h = half_nonnegative(n.clone());
     let x = partition_stable_n_nonempty(f, h.clone(), p);
     let y = partition_stable_n_nonempty(x.m1.clone(), n - h, p);
-    combine_ranges(x, y)
+    CombineRanges::default().call(&x, &y)
 }
 
 pub fn partition_stable_n<I, P>(f: I, n: I::DistanceType, p: &P) -> Pair<I, I>
@@ -5485,13 +5466,21 @@ impl<I, P> PartitionTrivial<I, P> {
     }
 }
 
-impl<I, P> PartitionTrivial<I, P>
+impl<I, P> FunctionalProcedure for PartitionTrivial<I, P>
+where
+    I: Regular,
+{
+    type Codomain = Pair<I, I>;
+}
+
+impl<I, P> UnaryFunction for PartitionTrivial<I, P>
 where
     I: Mutable + ForwardIterator,
     P: UnaryPredicate<Domain = I::ValueType>,
 {
-    pub fn call(&self, i: I) -> Pair<I, I> {
-        partition_stable_singleton(i, &self.p)
+    type Domain = I;
+    fn call(&self, i: &Self::Domain) -> Self::Codomain {
+        partition_stable_singleton(i.clone(), &self.p)
     }
 }
 
@@ -5690,7 +5679,7 @@ where
 
 pub fn reduce_balanced_1<I, Op>(mut f: I, l: &I, op: Op, z: &Op::Domain) -> Op::Domain
 where
-    I: Readable + Iterator,
+    I: ReadableIterator,
     Op: BinaryOperation<Domain = I::ValueType>,
 {
     // Precondition: $\property{readable\_bounded\_range}(f, l) \wedge l-f < 2^{33}$
@@ -5705,157 +5694,214 @@ where
     reduce_nonzeroes_1(f.clone(), &f.add(c.n), &t_op, z)
 }
 
-/*
-template<typename I, typename P>
-    requires(ForwardIterator(I) && UnaryPredicate(P) &&
-        ValueType(I) == Domain(P))
-I partition_stable_iterative(I f, I l, P p)
+pub fn partition_stable_iterative<I, P>(f: I, l: &I, p: P) -> I
+where
+    I: Mutable + ForwardIterator,
+    P: UnaryPredicate<Domain = I::ValueType>,
 {
     // Precondition: $\property{bounded\_range}(f, l) \wedge l - f < 2^{64}$
-    return reduce_balanced(
-        f, l,
-        combine_ranges<I>,
-        partition_trivial<I, P>(p),
-        pair<I, I>(f, f)
-      ).m0;
+    reduce_balanced(
+        f.clone(),
+        l,
+        CombineRanges::default(),
+        &PartitionTrivial::new(p),
+        &Pair::new(f.clone(), f),
+    )
+    .m0
 }
 
-template<typename I, typename B, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B) &&
-        ValueType(I) == ValueType(B) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I merge_n_with_buffer(I f0, DistanceType(I) n0,
-                      I f1, DistanceType(I) n1, B f_b, R r)
+pub fn merge_n_with_buffer<I, B, R>(
+    f0: I,
+    n0: I::DistanceType,
+    f1: I,
+    n1: I::DistanceType,
+    f_b: B,
+    r: R,
+) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\func{mergeable}(f_0, n_0, f_1, n_1, r)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n_0)$
-    copy_n(f0, n0, f_b);
-    return merge_copy_n(f_b, n0, f1, n1, f0, r).m2;
+    copy_n(f0.clone(), n0.clone(), f_b.clone());
+    merge_copy_n(f_b, n0, f1, n1, f0, r).m2
 }
 
-template<typename I, typename B, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B) &&
-        ValueType(I) == ValueType(B) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I sort_n_with_buffer(I f, DistanceType(I) n, B f_b, R r)
+pub fn sort_n_with_buffer<I, B, R>(f: I, n: I::DistanceType, f_b: B, r: R) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Property:
     // $\property{mutable\_counted\_range}(f, n) \wedge \property{weak\_ordering}(r)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, \lceil n/2 \rceil)$
-    DistanceType(I) h = half_nonnegative(n);
-    if (zero(h)) return f + n;
-    I m = sort_n_with_buffer(f, h,     f_b, r);
-          sort_n_with_buffer(m, n - h, f_b, r);
-    return merge_n_with_buffer(f, h, m, n - h, f_b, r);
+    let h = half_nonnegative(n.clone());
+    if zero(&h) {
+        return f.add(n);
+    }
+    let m = sort_n_with_buffer(f.clone(), h.clone(), f_b.clone(), r.clone());
+    sort_n_with_buffer(m.clone(), n.clone() - h.clone(), f_b.clone(), r.clone());
+    merge_n_with_buffer(f, h.clone(), m, n - h, f_b, r)
 }
 
-template<typename I, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-void merge_n_step_0(I f0, DistanceType(I) n0,
-                    I f1, DistanceType(I) n1, R r,
-                    I& f0_0, DistanceType(I)& n0_0,
-                    I& f0_1, DistanceType(I)& n0_1,
-                    I& f1_0, DistanceType(I)& n1_0,
-                    I& f1_1, DistanceType(I)& n1_1)
+pub fn merge_n_step_0<I, R>(
+    f0: I,
+    n0: I::DistanceType,
+    f1: I,
+    n1: I::DistanceType,
+    r: &R,
+    f0_0: &mut I,
+    n_0_0: &mut I::DistanceType,
+    f0_1: &mut I,
+    n_0_1: &mut I::DistanceType,
+    f1_0: &mut I,
+    n_1_0: &mut I::DistanceType,
+    f1_1: &mut I,
+    n_1_1: &mut I::DistanceType,
+) where
+    I: Mutable + ForwardIterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{mergeable}(f_0, n_0, f_1, n_1, r)$
-    f0_0 = f0;
-    n0_0 = half_nonnegative(n0);
-    f0_1 = f0_0 + n0_0;
-    f1_1 = lower_bound_n(f1, n1, source(f0_1), r);
-    f1_0 = rotate(f0_1, f1, f1_1);
-    n0_1 = f1_0 - f0_1;
-    f1_0 = successor(f1_0);
-    n1_0 = predecessor(n0 - n0_0);
-    n1_1 = n1 - n0_1;
+    *f0_0 = f0;
+    *n_0_0 = half_nonnegative(n0.clone());
+    *f0_1 = f0_0.clone().add(n_0_0.clone());
+    *f1_1 = lower_bound_n(f1.clone(), n1.clone(), f0_1.source(), r);
+    *f1_0 = rotate(f0_1.clone(), f1, f1_1.clone());
+    *n_0_1 = f1_0.clone().sub(f0_1);
+    *f1_0 = f1_0.successor();
+    *n_1_0 = predecessor(n0 - n_0_0.clone());
+    *n_1_1 = n1 - n_0_1.clone();
 }
 
-template<typename I, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-void merge_n_step_1(I f0, DistanceType(I) n0,
-                    I f1, DistanceType(I) n1, R r,
-                    I& f0_0, DistanceType(I)& n0_0,
-                    I& f0_1, DistanceType(I)& n0_1,
-                    I& f1_0, DistanceType(I)& n1_0,
-                    I& f1_1, DistanceType(I)& n1_1)
+pub fn merge_n_step_1<I, R>(
+    f0: I,
+    n0: I::DistanceType,
+    f1: I,
+    n1: I::DistanceType,
+    r: &R,
+    f0_0: &mut I,
+    n_0_0: &mut I::DistanceType,
+    f0_1: &mut I,
+    n_0_1: &mut I::DistanceType,
+    f1_0: &mut I,
+    n_1_0: &mut I::DistanceType,
+    f1_1: &mut I,
+    n_1_1: &mut I::DistanceType,
+) where
+    I: Mutable + ForwardIterator,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{mergeable}(f_0, n_0, f_1, n_1, r)$
-    f0_0 = f0;
-    n0_1 = half_nonnegative(n1);
-    f1_1 = f1 + n0_1;
-    f0_1 = upper_bound_n(f0, n0, source(f1_1), r);
-    f1_1 = successor(f1_1);
-    f1_0 = rotate(f0_1, f1, f1_1);
-    n0_0 = f0_1 - f0_0;
-    n1_0 = n0 - n0_0;
-    n1_1 = predecessor(n1 - n0_1);
+    *f0_0 = f0.clone();
+    *n_0_1 = half_nonnegative(n1.clone());
+    *f1_1 = f1.clone().add(n_0_1.clone());
+    *f0_1 = upper_bound_n(f0, n0.clone(), f1_1.source(), r);
+    *f1_1 = f1_1.successor();
+    *f1_0 = rotate(f0_1.clone(), f1, f1_1.clone());
+    *n_0_0 = f0_1.clone().sub(f0_0);
+    *n_1_0 = n0 - n_0_0.clone();
+    *n_1_1 = predecessor(n1 - n_0_1.clone());
 }
 
-template<typename I, typename B, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B) &&
-        ValueType(I) == ValueType(B) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I merge_n_adaptive(I f0, DistanceType(I) n0,
-                   I f1, DistanceType(I) n1,
-                   B f_b, DistanceType(B) n_b, R r)
+pub fn merge_n_adaptive<I, B, R>(
+    f0: I,
+    n0: I::DistanceType,
+    f1: I,
+    n1: I::DistanceType,
+    f_b: B,
+    n_b: B::DistanceType,
+    r: R,
+) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{mergeable}(f_0, n_0, f_1, n_1, r)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n_b)$
-    typedef DistanceType(I) N;
-    if (zero(n0) || zero(n1)) return f0 + n0 + n1;
-    if (n0 <= N(n_b))
+    if zero(&n0) || zero(&n1) {
+        return f0.add(n0).add(n1);
+    }
+    if n0 <= n_b {
         return merge_n_with_buffer(f0, n0, f1, n1, f_b, r);
-    I f0_0; I f0_1; I f1_0; I f1_1;
-    N n0_0; N n0_1; N n1_0; N n1_1;
-    if (n0 < n1) merge_n_step_0(
-                            f0, n0, f1, n1, r,
-                            f0_0, n0_0, f0_1, n0_1,
-                            f1_0, n1_0, f1_1, n1_1);
-    else         merge_n_step_1(
-                            f0, n0, f1, n1, r,
-                            f0_0, n0_0, f0_1, n0_1,
-                            f1_0, n1_0, f1_1, n1_1);
-           merge_n_adaptive(f0_0, n0_0, f0_1, n0_1,
-                            f_b, n_b, r);
-    return merge_n_adaptive(f1_0, n1_0, f1_1, n1_1,
-                            f_b, n_b, r);
+    }
+    let mut f0_0 = I::default();
+    let mut f0_1 = I::default();
+    let mut f1_0 = I::default();
+    let mut f1_1 = I::default();
+    let mut n_0_0 = I::DistanceType::default();
+    let mut n_0_1 = I::DistanceType::default();
+    let mut n_1_0 = I::DistanceType::default();
+    let mut n_1_1 = I::DistanceType::default();
+    if n0 < n1 {
+        merge_n_step_0(
+            f0, n0, f1, n1, &r, &mut f0_0, &mut n_0_0, &mut f0_1, &mut n_0_1, &mut f1_0,
+            &mut n_1_0, &mut f1_1, &mut n_1_1,
+        );
+    } else {
+        merge_n_step_1(
+            f0, n0, f1, n1, &r, &mut f0_0, &mut n_0_0, &mut f0_1, &mut n_0_1, &mut f1_0,
+            &mut n_1_0, &mut f1_1, &mut n_1_1,
+        );
+    }
+    merge_n_adaptive(
+        f0_0,
+        n_0_0,
+        f0_1,
+        n_0_1,
+        f_b.clone(),
+        n_b.clone(),
+        r.clone(),
+    );
+    merge_n_adaptive(f1_0, n_1_0, f1_1, n_1_1, f_b, n_b, r)
 }
 
-template<typename I, typename B, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Mutable(B) && ForwardIterator(B) &&
-        ValueType(I) == ValueType(B) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I sort_n_adaptive(I f, DistanceType(I) n,
-                  B f_b, DistanceType(B) n_b, R r)
+pub fn sort_n_adaptive<I, B, R>(f: I, n: I::DistanceType, f_b: B, n_b: B::DistanceType, r: R) -> I
+where
+    I: Mutable + ForwardIterator,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
     // $\property{mutable\_counted\_range}(f, n) \wedge \property{weak\_ordering}(r)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n_b)$
-    DistanceType(I) h = half_nonnegative(n);
-    if (zero(h)) return f + n;
-    I m = sort_n_adaptive(f, h,     f_b, n_b, r);
-          sort_n_adaptive(m, n - h, f_b, n_b, r);
-    return merge_n_adaptive(f, h, m, n - h, f_b, n_b, r);
+    let h = half_nonnegative(n.clone());
+    if zero(&h) {
+        return f.add(n);
+    }
+    let m = sort_n_adaptive(f.clone(), h.clone(), f_b.clone(), n_b.clone(), r.clone());
+    sort_n_adaptive(
+        m.clone(),
+        n.clone() - h.clone(),
+        f_b.clone(),
+        n_b.clone(),
+        r.clone(),
+    );
+    merge_n_adaptive(f, h.clone(), m, n - h, f_b, n_b, r)
 }
 
-template<typename I, typename R>
-    requires(Mutable(I) && ForwardIterator(I) &&
-        Relation(R) && ValueType(I) == Domain(R))
-I sort_n(I f, DistanceType(I) n, R r)
+pub fn sort_n<I, R>(f: I, n: &I::DistanceType, r: R) -> I
+where
+    I: Mutable + ForwardIterator<DistanceType = usize>,
+    R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
     // $\property{mutable\_counted\_range}(f, n) \wedge \property{weak\_ordering}(r)$
-    temporary_buffer<ValueType(I)> b(half_nonnegative(n));
-    return sort_n_adaptive(f, n, begin(b), size(b), r);
+    let b = TemporaryBuffer::new(NumCast::from(half_nonnegative(*n)).unwrap());
+    sort_n_adaptive(
+        f,
+        *n,
+        Pointer::new(b.begin()),
+        NumCast::from(b.size()).unwrap(),
+        r,
+    )
 }
 
-
+/*
 //
 //  Chapter 12. Composite objects
 //
