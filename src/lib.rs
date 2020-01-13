@@ -5720,19 +5720,19 @@ pub fn merge_n_with_buffer<I, B, R>(
 ) -> I
 where
     I: Mutable + ForwardIterator,
-    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
     R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\func{mergeable}(f_0, n_0, f_1, n_1, r)$
     // Precondition: $\property{mutable\_counted\_range}(f_b, n_0)$
     copy_n(f0.clone(), n0.clone(), f_b.clone());
-    merge_copy_n(f_b, n0, f1, n1, f0, r).m2
+    merge_copy_n(f_b, NumCast::from(n0).unwrap(), f1, n1, f0, r).m2
 }
 
 pub fn sort_n_with_buffer<I, B, R>(f: I, n: I::DistanceType, f_b: B, r: R) -> I
 where
     I: Mutable + ForwardIterator,
-    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
     R: Relation<Domain = I::ValueType>,
 {
     // Property:
@@ -5818,7 +5818,7 @@ pub fn merge_n_adaptive<I, B, R>(
 ) -> I
 where
     I: Mutable + ForwardIterator,
-    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
     R: Relation<Domain = I::ValueType>,
 {
     // Precondition: $\property{mergeable}(f_0, n_0, f_1, n_1, r)$
@@ -5826,7 +5826,7 @@ where
     if zero(&n0) || zero(&n1) {
         return f0.add(n0).add(n1);
     }
-    if n0 <= n_b {
+    if n0 <= NumCast::from(n_b.clone()).unwrap() {
         return merge_n_with_buffer(f0, n0, f1, n1, f_b, r);
     }
     let mut f0_0 = I::default();
@@ -5863,7 +5863,7 @@ where
 pub fn sort_n_adaptive<I, B, R>(f: I, n: I::DistanceType, f_b: B, n_b: B::DistanceType, r: R) -> I
 where
     I: Mutable + ForwardIterator,
-    B: Mutable<ValueType = I::ValueType> + ForwardIterator<DistanceType = I::DistanceType>,
+    B: Mutable<ValueType = I::ValueType> + ForwardIterator,
     R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
@@ -5886,19 +5886,13 @@ where
 
 pub fn sort_n<I, R>(f: I, n: &I::DistanceType, r: R) -> I
 where
-    I: Mutable + ForwardIterator<DistanceType = usize>,
+    I: Mutable + ForwardIterator,
     R: Relation<Domain = I::ValueType>,
 {
     // Precondition:
     // $\property{mutable\_counted\_range}(f, n) \wedge \property{weak\_ordering}(r)$
-    let b = TemporaryBuffer::new(NumCast::from(half_nonnegative(*n)).unwrap());
-    sort_n_adaptive(
-        f,
-        *n,
-        Pointer::new(b.begin()),
-        NumCast::from(b.size()).unwrap(),
-        r,
-    )
+    let b = TemporaryBuffer::new(NumCast::from(half_nonnegative(n.clone())).unwrap());
+    sort_n_adaptive(f, n.clone(), Pointer::new(b.begin()), b.size(), r)
 }
 
 /*
