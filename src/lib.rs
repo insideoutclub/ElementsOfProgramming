@@ -6007,9 +6007,24 @@ bool empty(const array_k<k, T>&) // unused parameter name dropped to avoid warni
 {
     return false;
 }
-
+*/
 
 // concept Linearizeable
+
+pub trait Linearizable: Regular {
+    type IteratorType: Iterator;
+    type ValueType: Regular;
+    type SizeType: Integer;
+    fn begin(&self) -> Self::IteratorType;
+    fn end(&self) -> Self::IteratorType;
+    fn size(&self) -> <Self::IteratorType as Iterator>::DistanceType {
+        self.end().sub(&self.begin())
+    }
+    fn empty(&self) -> bool {
+        self.begin() == self.end()
+    }
+    fn deref(&self, i: Self::SizeType) -> Self::ValueType;
+}
 
 //  Since we already defined ValueType for any (regular) T,
 //  C++ will not let us define it for any linearizable T like this:
@@ -6024,20 +6039,24 @@ bool empty(const array_k<k, T>&) // unused parameter name dropped to avoid warni
 // Instead, each type W that models Linearizable must provide
 //      the corresponding specialization of value_type
 
-template<typename W>
-    requires(Linearizable(W))
-bool linearizable_equal(const W& x, const W& y)
+pub fn linearizable_equal<W>(x: &W, y: &W) -> bool
+where
+    W: Linearizable,
+    W::IteratorType: Readable,
 {
-    return lexicographical_equal(begin(x), end(x), begin(y), end(y));
+    lexicographical_equal(x.begin(), &x.end(), y.begin(), &y.end())
 }
 
-template<typename W>
-    requires(Linearizable(W))
-bool linearizable_ordering(const W& x, const W& y)
+pub fn linearizable_ordering<W>(x: &W, y: &W) -> bool
+where
+    W: Linearizable,
+    W::IteratorType: Readable,
+    <W::IteratorType as Reference>::ValueType: Ord,
 {
-    return lexicographical_less(begin(x), end(x), begin(y), end(y));
+    lexicographical_less(x.begin(), &x.end(), y.begin(), &y.end())
 }
 
+/*
 template<typename W>
     requires(Linearizeable(W))
 DistanceType(IteratorType(W)) size(const W& x)
@@ -6051,16 +6070,31 @@ bool empty(const W& x)
 {
     return begin(x) == end(x);
 }
-
+*/
 
 // type bounded_range
 // model Linearizable(bounded_range)
 
-template<typename I>
-    requires(Readable(I) && Iterator(I))
-struct bounded_range {
-    I f;
-    I l;
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct BoundedRange<I> {
+    f: I,
+    l: I,
+}
+
+impl<I> BoundedRange<I> {
+    pub fn new(f: I, l: I) -> Self {
+        Self { f, l }
+    }
+}
+
+impl<I> Linearizable for BoundedRange<I> where I: Readable + Iterator {
+    type IteratorType = I;
+    type ValueType = I::ValueType;
+    type SizeType = I::DistanceType;
+    fn deref(&self, i: I::DistanceType)
+}
+
+/*
     bounded_range() { }
     bounded_range(const I& f, const I& l) : f(f), l(l) { }
     const ValueType(I)& operator[](DistanceType(I) i)
